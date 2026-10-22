@@ -1,0 +1,44 @@
+# Local environment files; keep shareable templates.
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.*.sample
+!.env.template
+!.env.*.template
+
+# Rust build output. Cargo.lock belongs in version control.
+target/
+
+# Node dependencies and generated frontend output.
+node_modules/
+dist/
+.output/
+.tanstack/
+.vite/
+.cache/
+*.tsbuildinfo
+
+# Test and coverage output.
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Logs.
+*.log
+npm-debug.log*
+
+# Local editor and operating-system files.
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Delta's managed checkouts, not shared .delta configuration.
+/.delta/worktrees/
