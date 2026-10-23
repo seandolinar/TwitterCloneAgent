@@ -33,6 +33,15 @@ button:disabled { cursor: wait; opacity: .6; }
 small { line-height: 1.5; }
 .form-error { color: #ad2020; overflow-wrap: anywhere; }
 .plain-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.social-page { margin-top: 2rem; }
+.post-card { border: 1px solid #8295a7; border-radius: .75rem; padding: 1rem; margin: 1rem 0; }
+textarea, select { width: 100%; min-width: 0; font: inherit; padding: .75rem; border: 1px solid #8295a7; border-radius: .5rem; background: transparent; color: inherit; }
+textarea { resize: vertical; }
+.actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem; }
+.permissions { border: 1px solid #8295a7; border-radius: .5rem; padding: 1rem; margin: 1rem 0; }
+.permissions label { display: flex; gap: .75rem; align-items: center; margin: .5rem 0; overflow-wrap: anywhere; }
+.permissions input { width: auto; flex-shrink: 0; }
+.key-list { list-style: none; padding: 0; }
 
 @media (prefers-color-scheme: dark) {
   :root { color: #edf3f8; background: #111a22; }

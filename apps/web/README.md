@@ -1,8 +1,9 @@
 # Browser entry point
 
-See [the account walkthrough](ACCOUNT_GUIDE.md) for usable routes, local
-registration/verification/recovery, and troubleshooting. Social screens and
-integration-key settings remain pending.
+See [the browser walkthrough](ACCOUNT_GUIDE.md) for account onboarding/recovery,
+feeds, profiles, social actions, personal keys, and troubleshooting.
+Key creation requires the optional real Unkey integration; browser social use
+does not. The public contract is `/docs/openapi.json`.
 
 TanStack Start/Nitro renders the browser product and forwards only an explicit
 method/path allowlist to the Rust cookie listener:
@@ -26,7 +27,8 @@ global Nitro middleware inspects the **raw** request target before router/URL
 normalization. Encoded paths, dot segments, backslashes, double slashes, and
 noncanonical targets are rejected; percent-encoded query cursors are allowed.
 Unsupported/missing runtime peer context fails closed, never falling back to
-caller forwarding headers. Compute-specific ingress is not enabled here.
+caller forwarding headers. The default is browser-only mode; the combined image
+explicitly enables the separate Compute mode described below.
 
 Proxy headers are allowlisted. Only cookies, original Origin, CSRF header,
 content type, and Accept are relayed. `Authorization`, `X-Unkey-*`, caller
@@ -50,7 +52,7 @@ create a global API client/query cache containing a user's identity.
 
 `getRouter` creates its own QueryClient and browser API closure for every SSR
 request (and one for the hydrated browser router). TanStack's Query integration
-owns dehydration/hydration. Only safe session DTOs enter the cache; cookies and
+owns dehydration/hydration. Only safe session/social/key-metadata DTOs enter the cache; cookies and
 CSRF values do not. Login/logout/reset cancel and clear old queries before
 reloading route state. Queries and writes do not retry automatically.
 
@@ -76,7 +78,7 @@ form destinations, camera/microphone/geolocation use, MIME sniffing, referrer
 leakage, and shared personalized response caching are restricted. The policy
 uses `strict-dynamic` for trusted script loading, not as a claim that already
 trusted JavaScript cannot create scripts. HTTPS/HSTS hosting-edge configuration
-and the remaining Compute work are still pending.
+and any actual hosting deployment remain operator work.
 
 ## Validation
 
@@ -121,6 +123,27 @@ They also exercise account screens, real recovery mail, old-session rejection,
 production CSP with successful hydration and blocked untrusted markup scripts.
 Full-product acceptance and live-provider tests remain separate.
 
-The Docker build copies both `src/` and `server/` through an explicit build
+Social queries use the same request-scoped SSR read boundary. Infinite lists
+retain pages on next-page failure and deduplicate IDs. Mutations are
+server-confirmed, not optimistic; invalidation refreshes counts and lists.
+The composer counts Unicode code points and Unicode White_Space like Rust,
+not JavaScript's subtly different `\\s` classification.
+Key creation uses transient component state, not a cached mutation result.
+The secret clears on dismissal/unmount and pagehide, and remounts by account ID.
+
+## Explicit Compute mode
+
+The combined image sets `WEB_RUNTIME_MODE=compute` and private loopback URLs.
+The raw ingress middleware forwards only allowlisted `/v1` operations to the
+gateway listener, preserving its principal but no raw Bearer/cookie. Cookie
+routes always use the separate browser listener with principal/Bearer stripped.
+Single-IP gateway-overwritten forwarding context is accepted only in this
+explicit mode; missing/duplicate/HTTP context fails closed. `/readyz` queries
+the Rust schema/database check. All twelve integration operations and bypass
+attempts are exercised by the second built-runtime `test:proxy` test.
+Unsigned principals are safe only behind exclusive managed gateway ingress.
+See `docs/deployment/unkey-compute.md`; do not expose this mode's origin directly.
+
+The Docker build copies `src/`, `server/`, and public contract assets through an explicit build
 context allowlist. Credentials, test fixtures, and local dependencies do not
 enter the runtime image.

@@ -115,7 +115,7 @@ impl IntoResponse for SocialError {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
     pub id: Uuid,
@@ -129,10 +129,12 @@ pub struct Profile {
     pub viewer_follows: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProfileUpdate {
+    #[schema(min_length = 1, max_length = 50)]
     pub display_name: String,
+    #[schema(max_length = 160)]
     pub biography: String,
 }
 

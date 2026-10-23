@@ -220,7 +220,7 @@ def verification_email_smoke(env):
     print("PASS: real SMTP verification mail delivered to Compose Mailpit; only a token digest persisted", flush=True)
 
 
-def live_smoke():
+def live_smoke(acceptance=False):
     env = environment()
     env["COMPOSE_PROJECT_NAME"] = "twitterclone-check-" + secrets.token_hex(4)
     env["WEB_PORT"] = str(free_port())
@@ -259,6 +259,14 @@ def live_smoke():
                 cwd=ROOT, env=env, check=True,
             )
             verification_email_smoke(env)
+            if acceptance:
+                browser_env = dict(env)
+                browser_env["WEB_BASE_URL"] = env["APP_ORIGIN"]
+                browser_env["MAIL_BASE_URL"] = "http://localhost:" + env["MAIL_UI_PORT"]
+                subprocess.run(
+                    ["npm", "--prefix", "apps/web", "run", "test:e2e"],
+                    cwd=ROOT, env=browser_env, check=True,
+                )
             print("PASS: exact docker compose up --build serves web, mail, and API health", flush=True)
             print("PASS: no host Rust/Node or Unkey credentials used by the stack", flush=True)
         except BaseException:
@@ -277,10 +285,15 @@ if __name__ == "__main__":
     if not shutil.which("docker"):
         raise SystemExit("Docker CLI and Compose are required for foundation checks.")
     live = "--live" in sys.argv
+    acceptance = "--acceptance" in sys.argv
+    if acceptance:
+        sys.argv.remove("--acceptance")
+        if not live:
+            raise SystemExit("--acceptance requires --live")
     if live:
         sys.argv.remove("--live")
     result = unittest.main(exit=False)
     if not result.result.wasSuccessful():
         raise SystemExit(1)
     if live:
-        live_smoke()
+        live_smoke(acceptance=acceptance)

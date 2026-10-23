@@ -2,6 +2,7 @@ import '@tanstack/react-start/server-only'
 import { randomUUID } from 'node:crypto'
 import { isIP } from 'node:net'
 import type { IncomingMessage } from 'node:http'
+import { clientIP, privateOrigin } from './runtime.server.ts'
 
 const MAX_BODY_BYTES = 16 * 1024
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
@@ -70,7 +71,7 @@ export function backendOrigin(value = process.env.API_BASE_URL ?? 'http://127.0.
   return url
 }
 
-async function boundedBody(request: Request, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer> | undefined> {
+export async function boundedBody(request: Request, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer> | undefined> {
   if (!request.body) return undefined
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
@@ -100,14 +101,13 @@ async function boundedBody(request: Request, signal: AbortSignal): Promise<Uint8
   return body
 }
 
-export async function proxyBrowserRequest(request: Request, ip: string, backend: URL): Promise<Response> {
-  const url = new URL(request.url)
-  if (!canonicalTarget(url.pathname) || !isIP(ip)) {
+export function requestPolicy(method: string, url: URL): Response | undefined {
+  if (!canonicalTarget(url.pathname)) {
     return proxyError(400, 'invalid_path', 'The request path is not allowed.')
   }
   const route = routes.find((route) => route.path.test(url.pathname))
   if (!route) return proxyError(404, 'not_found', 'The resource was not found.')
-  if (!route.methods.includes(request.method)) {
+  if (!route.methods.includes(method)) {
     return proxyError(405, 'method_not_allowed', 'The method is not allowed.', { Allow: route.methods.join(', ') })
   }
   for (const name of url.searchParams.keys()) {
@@ -115,6 +115,13 @@ export async function proxyBrowserRequest(request: Request, ip: string, backend:
       return proxyError(422, 'invalid_query', 'Use only supported query parameters.')
     }
   }
+}
+
+export async function proxyBrowserRequest(request: Request, ip: string, backend: URL): Promise<Response> {
+  const url = new URL(request.url)
+  if (!isIP(ip)) return proxyError(503, 'client_context_unavailable', 'Trusted client context is unavailable.')
+  const rejection = requestPolicy(request.method, url)
+  if (rejection) return rejection
   const headers = new Headers()
   // Allowlisting rather than copying then stripping keeps future identity and
   // hop-by-hop headers out of this trust boundary by default.
@@ -154,10 +161,11 @@ export async function browserProxy(request: Request): Promise<Response> {
   if (!peer) return proxyError(503, 'client_context_unavailable', 'Trusted client context is unavailable.')
   if (!canonicalTarget(peer.target)) return proxyError(400, 'invalid_path', 'The request path is not allowed.')
   let backend: URL
-  try { backend = backendOrigin() } catch {
+  let ip: string
+  try { backend = privateOrigin(backendOrigin()); ip = clientIP(request, peer.ip) } catch {
     return proxyError(503, 'service_unavailable', 'The service is temporarily unavailable.')
   }
-  return proxyBrowserRequest(request, peer.ip, backend)
+  return proxyBrowserRequest(request, ip, backend)
 }
 
 // Instantiate only within a loader/server function, using its current request.
@@ -174,11 +182,12 @@ export function createServerApi(request: Request) {
       if (!peer || !canonicalTarget(peer.target)) return proxyError(503, 'client_context_unavailable', 'Trusted client context is unavailable.')
       if (!path.startsWith('/api/') || !canonicalTarget(path)) return proxyError(400, 'invalid_path', 'The request path is not allowed.')
       let backend: URL
-      try { backend = backendOrigin() } catch {
+      let ip: string
+      try { backend = privateOrigin(backendOrigin()); ip = clientIP(request, peer.ip) } catch {
         return proxyError(503, 'service_unavailable', 'The service is temporarily unavailable.')
       }
       const target = new URL(path, new URL(request.url).origin)
-      return proxyBrowserRequest(new Request(target, { headers, signal: request.signal }), peer.ip, backend)
+      return proxyBrowserRequest(new Request(target, { headers, signal: request.signal }), ip, backend)
     },
   }
 }

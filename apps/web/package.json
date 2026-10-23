@@ -12,7 +12,7 @@
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.ts",
-    "test:proxy": "npm run build && node --test tests/proxy-runtime.ts",
+    "test:proxy": "npm run build && node --test tests/proxy-runtime.ts tests/compute-runtime.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Post {
     pub id: Uuid,
@@ -16,9 +16,11 @@ pub struct Post {
     pub viewer_likes: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PostCreate {
+    /// Plain text, 1–280 Unicode code points, with a non-whitespace character.
+    #[schema(min_length = 1, max_length = 280, example = "Hello from the API")]
     pub body: String,
 }
 

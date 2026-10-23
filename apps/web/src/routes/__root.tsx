@@ -45,6 +45,8 @@ function RootLayout() {
       <nav aria-label="Main navigation">
         <Link to="/">Home</Link>
         {session ? <>
+          <Link to="/profiles/$handle" params={{ handle: session.handle }}>Your profile</Link>
+          <Link to="/settings/keys">API keys</Link>
           {!session.verified && <Link to="/verify-email">Verify email</Link>}
           <Link to="/logout">Log out</Link>
         </> : <>

@@ -7,19 +7,26 @@ PostgreSQL, and planned Unkey API-key/gateway integration.
 secure sessions/recovery, the social API (profiles, posts, relationships, and
 timelines), and the allowlisted browser proxy are implemented. See the
 [account walkthrough](apps/web/ACCOUNT_GUIDE.md) to try the usable browser flows.
-Feed/profile/social screens, key settings UI, and live Unkey acceptance remain
-pending. Home is an account-aware landing
-page, not a finished social network. Do not deploy it as a finished product.
+Feed/profile/social screens and key settings are implemented, including
+pagination, profile editing, social controls, and one-time key reveal.
+Live Unkey acceptance and any actual Compute deployment remain pending.
+Do not deploy this controlled MVP as an unrestricted public social network.
 
 Browser key-management endpoints and the optional pinned Frontline Compose
 profile and gateway principal/local-key authorization are implemented;
 see [the Unkey contract](apps/api/UNKEY.md). Provider-authenticated live
 acceptance remains separate from local fixture evidence.
 
+The public [OpenAPI contract and executable requests](docs/API.md) cover all
+twelve integration operations, their permissions, cursor pagination, and
+application versus gateway errors. Download the generated document from
+http://localhost:3000/docs/openapi.json after starting the browser stack.
+
 **Approved production target:** one Unkey Compute app containing TanStack Start
 and Rust behind a single ingress, with loopback-only Rust interfaces and external
-TLS PostgreSQL/SMTP. The combined image, deployment configuration, and runbook are
-still pending. Local development continues to use the Compose stack below.
+TLS PostgreSQL/SMTP. The combined image, deployment configuration, and
+[operator runbook](docs/deployment/unkey-compute.md) are delivered and locally
+fixture-tested, not deployed. Local development continues to use the Compose stack below.
 The plan and implementation progress live in
 [`build-twitter-mvp`](openspec/changes/build-twitter-mvp/tasks.md); earlier draft
 threads do not replace its checked task state. Deployment and provisioning need
@@ -100,6 +107,13 @@ python3 tests/with_postgres.py cargo test \
   --manifest-path apps/api/Cargo.toml --tests -- --ignored
 ```
 
+Without host Rust, the pinned container-based suite runs check, formatting,
+Clippy, unit tests, and all ignored database/HTTP tests with two build jobs:
+
+```sh
+python3 tests/check_rust.py
+```
+
 To build/start an isolated Compose project, check the running frontend/mail/API
 containers, and inspect non-root image users:
 
@@ -107,11 +121,16 @@ containers, and inspect non-root image users:
 python3 tests/test_foundation.py --live
 ```
 
+Add `--acceptance` to run Playwright against that same exact foreground
+`docker compose up --build` stack before teardown (requires the pinned Node
+dependencies and installed Chromium, as documented in `apps/web/README.md`).
+
 This test uses ephemeral credentials and free loopback ports, not your `.env`
 credentials. It also delivers a real verification-email fixture through SMTP to
 the Compose mail catcher and checks digest-only token persistence without
 printing the token. It stops its own containers without deleting named volumes.
-It does not test complete browser authentication/social workflows or live Unkey.
+Without `--acceptance` it does not test browser authentication/social workflows.
+Neither option establishes live Unkey/Compute behavior.
 
 See [the API README](apps/api/README.md) for configuration validation, HTTP
 limits, and backend behavior. Production requires HTTPS, private ingress,

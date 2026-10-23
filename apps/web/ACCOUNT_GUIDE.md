@@ -1,8 +1,8 @@
 # Local account walkthrough
 
-Account screens are usable now. The social API exists, but feed/profile/social
-screens and Unkey key settings are still pending. This is a controlled MVP, not
-a finished product or an unrestricted public deployment.
+Account, social, and personal-key screens are implemented. This is a controlled
+MVP, not an unrestricted public deployment. Live provider acceptance and actual
+deployment remain separate from the delivered, locally tested combined image.
 
 ## Start the standard browser stack
 
@@ -37,8 +37,7 @@ browser: `localhost` and `127.0.0.1` are different cookie/origin contexts.
 5. Open the email link, then press **Verify email**. Merely opening it does not
    consume the token. Successful verification removes the token from the URL.
 6. Use `/login` with the same email and exact password. The header shows the
-   signed-in handle. Home currently reports account state; feed screens are
-   a later task, not a broken login redirect.
+   signed-in handle. A verified account sees its chronological home feed.
 7. To log out, open `/logout` and press **Confirm logout**. Visiting the page
    alone does not revoke your session.
 
@@ -64,7 +63,7 @@ Use the header's **Verify email** link to request a resend while logged in.
 
 | Route | Behavior |
 | --- | --- |
-| `/` | Account-aware landing page and current implementation status |
+| `/` | Verified user's home feed/composer; otherwise onboarding/verification guidance |
 | `/register` | Generic registration acknowledgement; no automatic login |
 | `/login` | Email/password login with session and CSRF rotation |
 | `/logout` | Explicit logout confirmation |
@@ -73,11 +72,74 @@ Use the header's **Verify email** link to request a resend while logged in.
 | `/forgot-password` | Generic reset-request acknowledgement |
 | `/reset-password?token=...` | Explicit replacement-password form |
 | `/reset-password` | Guidance to request/open a fresh reset link |
+| `/profiles/{handle}` | Public profile and paginated posts, follow controls |
+| `/posts/{id}` | Public post detail, likes, and author-only deletion |
+| `/settings/profile` | Verified owner's display name and biography editor |
+| `/settings/keys` | Key metadata, creation/reauthentication, one-time reveal, revocation |
+| `/docs/openapi.json` | Public generated third-party API contract; no key needed |
 | `/healthz` | Frontend liveness, not full-product readiness |
 
 Account UI calls `/api/auth/*`; social API calls use `/api/v1/*`.
 Ordinary browser ingress blocks `/v1`. API requests still require the server's
 authorization and mutation CSRF checks; navigation controls are not authorization.
+
+## Try the social product
+
+1. Verify and log in as Alice, then publish a plain-text post from Home.
+   The live counter counts Unicode code points: an emoji is one, a base letter
+   plus a combining mark is two. Whitespace-only or over-280 text cannot submit.
+   A network error keeps your draft; inspect the feed before resubmitting,
+   because the first request may already have committed.
+2. In a separate browser/private context, onboard Bob and publish a post.
+   Open `/profiles/{Bob's handle}` as Alice. Use **Follow**, then Home:
+   Alice's own and Bob's posts appear newest first. **Unfollow** removes Bob
+   from future feed reads. No global discovery/search timeline is part of this MVP.
+3. Use **Like**/**Unlike** on a post. Counts change only after the server
+   confirms; a rejected request leaves the previous state intact. Only an
+   author's cards offer **Delete post**, followed by **Confirm delete post**
+   or **Keep post**. Another account cannot delete it through the API either.
+4. Open **Your profile** → **Edit profile**. Display names require 1–50 code
+   points; biographies permit up to 160. Handles are fixed. User content is
+   rendered as text, including literal `<script>` or other markup.
+5. Share a profile/post link with a signed-out context. Public content is
+   readable; protected interactions invite login. Missing/deleted resources
+   show not-found rather than stale content.
+6. Lists load 20 at a time. Use **Load more posts** by keyboard or pointer.
+   A paging error keeps existing posts and exposes **Try again**; successful
+   retry does not duplicate rows. **No posts yet** and **You’re all caught up**
+   distinguish empty and completed lists.
+
+## Personal keys and API automation
+
+Open **API keys**. Without Unkey configuration, an explicit unavailable message
+and disabled creation form are expected; the app never fabricates keys.
+Existing metadata remains visible and owners can still revoke locally.
+
+With the separately configured optional Unkey profile:
+
+1. Enter **Current password** and **Confirm password**. The server enforces a
+   five-minute recent-password window and always checks the current session.
+   Password fields clear after submission. Confirm again if the window expires.
+2. Give the key a nonblank name (up to 100 code points), choose 1–365 expiry
+   days (default 90), and grant only needed permissions. Defaults are
+   `profiles.read`, `posts.read`, and `feed.read`; no writes are preselected.
+3. Press **Create key**, save the **One-time API key** using **Copy key** (or
+   select manually if clipboard permission fails), then **Dismiss secret**.
+   The secret cannot be recovered on reload, navigation, or a later list.
+   It is never put in browser storage, the URL, or the query/mutation cache.
+4. **Revoke {name}** immediately disables new application requests after local
+   commit. `revoked pending cleanup` means provider deletion is queued/retrying,
+   not an active-key grace period. Already-running requests may finish.
+5. Use a personal key only at the gateway, normally `http://localhost:8088`,
+   not `/v1` on the browser port. [The API guide](../../docs/API.md) documents
+   exact create-post, cursor-page, read-only-denial, and browser-only-revocation
+   requests, with an executable Rust example and generated OpenAPI.
+   Do not put keys, passwords, or root credentials into shell history or examples.
+
+All primary actions are native links/buttons/forms, have visible focus, and
+wrap at narrow widths. Inputs have labels; counters, operation states, and
+errors are announced. Post cards identify their author for action context.
+Keys appear only in the transient reveal view, never in a public profile.
 
 ## Troubleshooting
 
@@ -113,8 +175,9 @@ authorization and mutation CSRF checks; navigation controls are not authorizatio
 Keep verification/reset URLs private. Responses use no-store and no-referrer;
 there are no token-bearing analytics. Do not copy passwords/tokens into logs,
 browser storage, chat, or source files. Production-build HTML uses a per-request
-nonce CSP, anti-framing protections, and safe text rendering. Full production
-TLS/Compute delivery remains pending; these controls do not authorize deployment.
+nonce CSP, anti-framing protections, and safe text rendering. The combined
+image/TLS configuration is locally tested, not deployed; these controls do not
+authorize deployment.
 
 ## Verified workflow and limits of the evidence
 
@@ -129,9 +192,12 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/apps/web/node_modules/.cache/ms-playwright" \
 It covers registration, real verification/reset email retrieval, explicit link
 submission, resend, login/logout, old-session/password rejection, invalid/reused
 links, generic acknowledgements, SSR isolation, cookie/CSRF security, and form
-keyboard/mobile behavior. Backend tests separately exercise real expiration and
+keyboard/mobile behavior, social browsing/mutations, 22-post paging/retry without
+duplicates, ownership, and one-time key UI lifecycle. Key creation/revocation
+success in the UI uses explicit transport fixtures, not provider credentials.
+Backend tests separately exercise real expiration and
 concurrent token/reset consumption; browser tests do not wait 24 hours to expire
-a link. Tests do not prove live Unkey/Compute behavior or complete social UI
-acceptance. The wrapper tears down its own stack and preserves its named volume.
+a link. Tests do not prove live Unkey/Compute behavior.
+The wrapper tears down its own stack and preserves its named volume.
 Stop your ordinary stack with Ctrl+C or `docker compose down`; do not use `-v`
 unless you explicitly intend to destroy its database data.

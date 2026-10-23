@@ -45,6 +45,11 @@ fn config(production: bool) -> Config {
             ("SMTP_TLS", "true"),
             ("SMTP_USERNAME", "test-fixture"),
             ("SMTP_PASSWORD", "test-fixture-not-a-real-credential"),
+            // Cookie-policy construction only; this URL is never connected.
+            (
+                "DATABASE_URL",
+                "postgres://fixture:fixture@database.example.com/social?sslmode=verify-full",
+            ),
         ] {
             values.insert(key.into(), value.into());
         }

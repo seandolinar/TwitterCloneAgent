@@ -11,10 +11,11 @@ pub struct PageRequest {
     pub cursor: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Page {
     pub items: Vec<Post>,
+    /// Opaque cursor for the next page, or null at the end. Never interpret it.
     pub next_cursor: Option<String>,
 }
 

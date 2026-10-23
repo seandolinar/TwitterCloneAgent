@@ -1,0 +1,24 @@
+{
+  "project": "REPLACE_PROJECT",
+  "app": "twitterclone",
+  "environment": "preview",
+  "rootDirectory": ".",
+  "dockerfile": "infra/compute/Dockerfile",
+  "autoDeploy": false,
+  "port": 8080,
+  "vCpus": 1,
+  "memoryMib": 1024,
+  "storageMib": 0,
+  "command": [],
+  "shutdownSignal": "SIGTERM",
+  "upstreamProtocol": "http1",
+  "openapiSpecPath": "/docs/openapi.json",
+  "healthcheck": {
+    "method": "GET",
+    "path": "/readyz",
+    "intervalSeconds": 10,
+    "timeoutSeconds": 3,
+    "failureThreshold": 6,
+    "initialDelaySeconds": 30
+  }
+}

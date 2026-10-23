@@ -36,6 +36,7 @@ pub(crate) fn routes(social: Social) -> Router {
         .with_state(Arc::new(social))
 }
 
+#[utoipa::path(get, path = "/v1/me", responses((status = 200, body = Profile)))]
 async fn me(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -43,6 +44,8 @@ async fn me(
     social.me(ctx.required()?).await.map(Json)
 }
 
+#[utoipa::path(patch, path = "/v1/me", request_body = ProfileUpdate,
+    responses((status = 200, body = Profile)))]
 async fn update_profile(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -55,6 +58,9 @@ async fn update_profile(
         .map(Json)
 }
 
+#[utoipa::path(get, path = "/v1/profiles/{handle}",
+    params(("handle" = String, Path, description = "Case-insensitive immutable handle")),
+    responses((status = 200, body = Profile)))]
 async fn profile(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -63,6 +69,11 @@ async fn profile(
     social.profile(&handle, ctx.actor).await.map(Json)
 }
 
+#[utoipa::path(get, path = "/v1/profiles/{handle}/posts",
+    params(("handle" = String, Path),
+        ("limit" = Option<u32>, Query, minimum = 1, maximum = 100, description = "Default 20; maximum 100"),
+        ("cursor" = Option<String>, Query, max_length = 512, description = "Use nextCursor unchanged; newest first by creation time and ID")),
+    responses((status = 200, body = Page)))]
 async fn profile_posts(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -75,6 +86,10 @@ async fn profile_posts(
         .map(Json)
 }
 
+#[utoipa::path(get, path = "/v1/feed",
+    params(("limit" = Option<u32>, Query, minimum = 1, maximum = 100, description = "Default 20; maximum 100"),
+        ("cursor" = Option<String>, Query, max_length = 512, description = "Own plus currently followed authors; opaque nextCursor, newest first")),
+    responses((status = 200, body = Page)))]
 async fn feed(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -83,6 +98,8 @@ async fn feed(
     social.feed(ctx.required()?, page).await.map(Json)
 }
 
+#[utoipa::path(get, path = "/v1/posts/{id}", params(("id" = Uuid, Path)),
+    responses((status = 200, body = Post)))]
 async fn post(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -91,6 +108,8 @@ async fn post(
     social.post(id, ctx.actor).await.map(Json)
 }
 
+#[utoipa::path(post, path = "/v1/posts", request_body = PostCreate,
+    responses((status = 201, body = Post)))]
 async fn create_post(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -102,6 +121,9 @@ async fn create_post(
         .map(|post| (StatusCode::CREATED, Json(post)))
 }
 
+#[utoipa::path(delete, path = "/v1/posts/{id}", params(("id" = Uuid, Path)),
+    description = "Author only. Deletes the post and its likes.",
+    responses((status = 204, description = "Deleted; empty body")))]
 async fn delete_post(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -113,6 +135,9 @@ async fn delete_post(
         .map(|()| StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(put, path = "/v1/me/following/{id}", params(("id" = Uuid, Path)),
+    description = "Idempotent. The target must exist and cannot be yourself.",
+    responses((status = 204, description = "Following; empty body")))]
 async fn follow(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -123,6 +148,9 @@ async fn follow(
         .await
         .map(|()| StatusCode::NO_CONTENT)
 }
+#[utoipa::path(delete, path = "/v1/me/following/{id}", params(("id" = Uuid, Path)),
+    description = "Idempotent. The target must exist and cannot be yourself.",
+    responses((status = 204, description = "Not following; empty body")))]
 async fn unfollow(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -133,6 +161,9 @@ async fn unfollow(
         .await
         .map(|()| StatusCode::NO_CONTENT)
 }
+#[utoipa::path(put, path = "/v1/posts/{id}/like", params(("id" = Uuid, Path)),
+    description = "Idempotent. The post must exist.",
+    responses((status = 204, description = "Liked; empty body")))]
 async fn like(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,
@@ -143,6 +174,9 @@ async fn like(
         .await
         .map(|()| StatusCode::NO_CONTENT)
 }
+#[utoipa::path(delete, path = "/v1/posts/{id}/like", params(("id" = Uuid, Path)),
+    description = "Idempotent. The post must exist.",
+    responses((status = 204, description = "Not liked; empty body")))]
 async fn unlike(
     State(social): State<Arc<Social>>,
     Extension(ctx): Extension<SocialContext>,

@@ -7,6 +7,7 @@ pub mod http;
 pub mod jobs;
 pub mod keys;
 pub mod maintenance;
+pub mod openapi;
 pub mod rate_limit;
 pub mod social;
 mod social_http;

@@ -62,17 +62,26 @@ pub(crate) fn routes(pool: PgPool, social: Social, keyspace: Option<String>) -> 
 
 // This is the complete social permission map, shared with contract coverage
 // tests. An added route without a rule fails closed instead of reaching a handler.
+pub(crate) const OPERATIONS: &[(&str, &str, Permission)] = &[
+    ("GET", "/v1/me", Permission::ProfilesRead),
+    ("PATCH", "/v1/me", Permission::ProfilesWrite),
+    ("GET", "/v1/profiles/{handle}", Permission::ProfilesRead),
+    ("GET", "/v1/profiles/{handle}/posts", Permission::PostsRead),
+    ("GET", "/v1/posts/{id}", Permission::PostsRead),
+    ("GET", "/v1/feed", Permission::FeedRead),
+    ("POST", "/v1/posts", Permission::PostsWrite),
+    ("DELETE", "/v1/posts/{id}", Permission::PostsWrite),
+    ("PUT", "/v1/me/following/{id}", Permission::FollowsWrite),
+    ("DELETE", "/v1/me/following/{id}", Permission::FollowsWrite),
+    ("PUT", "/v1/posts/{id}/like", Permission::LikesWrite),
+    ("DELETE", "/v1/posts/{id}/like", Permission::LikesWrite),
+];
+
 pub(crate) fn permission(method: &Method, path: &str) -> Option<Permission> {
-    match (method.as_str(), path) {
-        ("GET", "/v1/me" | "/v1/profiles/{handle}") => Some(Permission::ProfilesRead),
-        ("PATCH", "/v1/me") => Some(Permission::ProfilesWrite),
-        ("GET", "/v1/profiles/{handle}/posts" | "/v1/posts/{id}") => Some(Permission::PostsRead),
-        ("GET", "/v1/feed") => Some(Permission::FeedRead),
-        ("POST", "/v1/posts") | ("DELETE", "/v1/posts/{id}") => Some(Permission::PostsWrite),
-        ("PUT" | "DELETE", "/v1/me/following/{id}") => Some(Permission::FollowsWrite),
-        ("PUT" | "DELETE", "/v1/posts/{id}/like") => Some(Permission::LikesWrite),
-        _ => None,
-    }
+    OPERATIONS
+        .iter()
+        .find(|(verb, route, _)| *verb == method.as_str() && *route == path)
+        .map(|(_, _, permission)| *permission)
 }
 
 fn denied() -> ApiError {

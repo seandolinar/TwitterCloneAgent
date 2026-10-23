@@ -58,6 +58,14 @@ test('built Nitro ingress rejects raw path bypasses and overwrites public identi
     assert(attempt < 100 && child.exitCode === null, `built server did not start: ${logs}`)
     await delay(50)
   }
+  const contract = await fetch(`${web}/docs/openapi.json`)
+  assert.equal(contract.status, 200)
+  assert(contract.headers.get('content-type')?.includes('application/json'))
+  const published = await contract.json()
+  assert.equal(published.openapi, '3.1.0')
+  assert.equal(published.paths['/v1/posts'].post['x-required-permission'], 'posts.write')
+  assert.equal(published.components.schemas.PostCreate.properties.body.maxLength, 280)
+  assert.equal(received.length, 0, 'public contract does not require or forward credentials')
   function raw(path: string, method = 'GET', headers: Record<string, string> = {}, body = '') {
     return new Promise<{ status: number; cookies: string[]; body: string }>((resolve, reject) => {
       const request = httpRequest(web, { path, method, headers: { ...headers, 'Content-Length': String(Buffer.byteLength(body)) } }, (response) => {

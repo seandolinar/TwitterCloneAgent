@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { call, onboard } from './helpers'
+import { readSocialScenario, writeSocialScenario } from './social-scenarios'
+import { keySettingsScenario } from './key-scenarios'
 
 test.beforeAll(() => {
   if (!process.env.WEB_BASE_URL || !process.env.MAIL_BASE_URL) {
@@ -9,7 +11,8 @@ test.beforeAll(() => {
   }
 })
 
-test('browser security preserves HttpOnly cookies and isolates SSR sessions between two readers', async ({ browser, request }) => {
+test('two-account acceptance covers SSR isolation, social actions, and one-time key settings', async ({ browser, request }) => {
+  test.setTimeout(120_000)
   const first = await browser.newContext()
   const second = await browser.newContext()
   try {
@@ -35,6 +38,11 @@ test('browser security preserves HttpOnly cookies and isolates SSR sessions betw
     expect(cookies.filter((cookie) => /session|csrf/.test(cookie.name)).every((cookie) => cookie.httpOnly)).toBe(true)
     expect(await alicePage.evaluate(() => document.cookie)).not.toContain('twitterclone_dev_session')
     expect(await alicePage.evaluate(() => document.cookie)).not.toContain('twitterclone_dev_csrf')
+    // Reuse these real accounts so the complete suite still respects the
+    // default registration/IP budget rather than weakening production limits.
+    await readSocialScenario(browser, alicePage, bobPage, alice, bob)
+    await writeSocialScenario(alicePage, bobPage, alice, bob)
+    await keySettingsScenario(alicePage, alice)
   } finally {
     await first.close()
     await second.close()

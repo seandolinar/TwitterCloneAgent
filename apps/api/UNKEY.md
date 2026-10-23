@@ -2,7 +2,7 @@
 
 The Rust management client, browser key API, and durable cleanup worker are
 implemented and fixture-tested, along with private gateway principal/local-key
-authorization. Key settings screens remain pending. No real provider keys were
+authorization. Key settings screens are implemented. No real provider keys were
 issued during these tests.
 
 ## Separate the two Unkey IDs and credentials
@@ -282,3 +282,101 @@ reauthentication, verification/revoked-session checks, local-first idempotent
 revocation, provider-outage retry/recovery, failed persistence cleanup, and
 reset/issuance serialization. These tests do not establish live gateway denial
 or live provider connectivity; those remain separately tracked.
+
+## Propagation, incident recovery, and orphan reconciliation
+
+Unkey API Management documents **about ten seconds** for key deletion, disable,
+expiry, and permission/role changes to reach verification, with some subsequent
+verifications still seeing old state. This is not an immediate-cutoff SLA.
+Rate-limit counts are also distributed/approximate; do not infer exact global
+remaining capacity from a single response. Reference:
+[verification propagation](https://www.unkey.com/docs/api-management/keys/verifying-keys).
+
+The application's cutoff is the **committed local revocation**, not the
+provider's response or cache expiry. Every new protected read and write checks
+the local row. Requests already in flight can finish. Password reset uses the
+same local cutoff for all owned keys. Keep a key visibly revoked/pending until
+provider cleanup completes; never clear `revoked_at` to solve a provider outage.
+
+The cleanup worker makes one soft-delete attempt per durable claim, with a
+30-second lease and an eight-attempt budget. Retry delays double from five
+seconds (5, 10, 20, 40, 80, 160, 320); the eighth failed claim is exhausted.
+Expired leases can be reclaimed; a successful provider call
+followed by a crash may repeat deletion safely. Only an acknowledged success
+or the exact key-not-found provider error completes cleanup. Missing credentials
+do not acknowledge jobs, and an exhausted job remains available for operator
+inspection rather than making the key active again.
+
+### Incident procedure
+
+1. Use the browser owner revocation (or password recovery for all owner keys).
+   Confirm local revoked/pending metadata. Do not test by revealing/storing the
+   secret, replaying issuance, or removing the local row.
+2. Check authorization-store readiness separately from provider availability.
+   Database failure returns 503; missing/malformed identity or invalid local
+   key returns 401. Neither listener has a permissive fallback.
+3. Restore the correct **environment-specific** create/delete credential and
+   connectivity. Check scopes and the matching `api_`/`ks_` pair, not just
+   nonblank values. Never substitute a broad workspace or verify-only root key.
+4. Inspect only job IDs, key IDs, attempts, lease/available timestamps, and
+   local/provider revocation timestamps. No headers, raw responses, credentials,
+   or token-bearing links belong in an incident log.
+5. Allow due retry jobs to drain. For exhausted jobs, first establish why they
+   failed, ensure the lease is not active, and take a database backup. An
+   authorized operator may transactionally reset that **specific** `unkey_revoke`
+   job's attempts to zero and its available time to now, clearing expired claim
+   fields. Do not reset the entire queue, replay email jobs, remove local
+   revocation, or edit provider-cleanup success timestamps by hand.
+6. Confirm provider deletion and local `providerRevokedAt`/`revoked` status;
+   after propagation, separately confirm real gateway denial when credentials
+   are available. Fixture tests are not evidence of hosted-provider recovery.
+
+### Ambiguous creation and orphan keys
+
+Cancellation, lost create responses, or a full database outage can leave a
+provider key without committed local metadata. Issuance is not idempotent:
+**do not retry the uncertain create blindly**. Unknown local keys cannot access
+the application even if Unkey verifies them.
+
+Use a private provider dashboard/export limited to this environment's keyspace.
+Compare key IDs, immutable identity external IDs, creation times, and expiry
+against local `api_keys` and pending `unkey_revoke` job IDs. Do not retrieve key
+secrets or grant recoverable-key access. Pause issuance while reconciling if
+necessary so an in-flight transaction is not mistaken for an orphan. Observe
+provider propagation and wait for bounded in-flight calls to finish before
+classifying a missing local record.
+
+For a confirmed unmatched provider key belonging to this application, obtain
+operator authorization to soft-delete that exact key ID with the scoped
+management credential (or enqueue its validated ID for existing durable cleanup).
+Do not import it as active metadata, guess its owner, delete unrelated keys, or
+permanently purge provider audit records. Record non-secret key/job IDs and the
+decision. A locally revoked key whose cleanup is pending is not a new orphan.
+Periodic reconciliation is an operator procedure for this MVP, not an
+implemented automated inventory importer.
+
+### Production trust boundary and single verification
+
+`X-Unkey-Principal` is unsigned. The approved production topology must have
+Unkey Compute's managed gateway as the **only** external ingress, one combined
+frontend/Rust app, and both Rust listeners on loopback. Gateway policies cover
+`/v1` and `/v1/*`, but not browser/health/documentation routes. Only the explicit
+Compute integration branch may preserve the gateway-generated principal.
+Browser `/api/*` always strips principal/Bearer headers and retains original
+cookie/Origin/CSRF checks. Never enable this trust merely because a public
+request contains forwarding or principal headers.
+
+The combined image/ingress/configuration are delivered and locally fixture-tested;
+see `docs/deployment/unkey-compute.md`. They have not been deployed.
+Local Frontline mode is not a production topology.
+Do not expose its unsigned-principal backend or a Compute-mode origin directly.
+
+Frontline alone performs Unkey verification and its auto-applied per-key limit.
+Rust performs local authorization and a **different** shared per-user write
+limit, not another provider verification. Outage/recovery tests replay one
+unchanged upstream principal before/during/after failed cleanup, require local
+401 after revocation, verify 503 on closed storage, and record exactly one
+creation plus a failed/successful cleanup pair with **zero verify calls**.
+The cross-adapter budget test proves three permitted writes consume three
+shared attempts, not six. These are application/fixture guarantees; real
+gateway verification counting and regional limit behavior remain live task 9.3.

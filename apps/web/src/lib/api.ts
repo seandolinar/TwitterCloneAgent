@@ -34,6 +34,23 @@ export interface Page {
   nextCursor: string | null
 }
 
+export interface KeyMetadata {
+  keyId: string
+  name: string
+  maskedHint: string
+  permissions: string[]
+  createdAt: string
+  expiresAt: string
+  revokedAt: string | null
+  providerRevokedAt: string | null
+  status: 'active' | 'expired' | 'revoked_pending_cleanup' | 'revoked'
+}
+
+export interface KeyList {
+  integrationAvailable: boolean
+  items: KeyMetadata[]
+}
+
 export class ApiFailure extends Error {
   readonly status: number
   readonly code: string

@@ -27,12 +27,13 @@ export function tokenSearch(search: Record<string, unknown>): { token?: string }
   return typeof search.token === 'string' ? { token: search.token } : {}
 }
 
-export function AccountForm({ children, submit, label, success, afterSuccess }: {
+export function AccountForm({ children, submit, label, success, afterSuccess, disabled = false }: {
   children?: ReactNode
   submit: (form: FormData) => Promise<void>
   label: string
   success: string
   afterSuccess?: () => Promise<void>
+  disabled?: boolean
 }) {
   const [hydrated, setHydrated] = useState(false)
   const [pending, setPending] = useState(false)
@@ -62,7 +63,7 @@ export function AccountForm({ children, submit, label, success, afterSuccess }: 
       setPending(false)
     }
   }}>
-    <fieldset disabled={!hydrated || pending}>
+    <fieldset disabled={!hydrated || pending || disabled}>
       {children}
       <button type="submit">{pending ? 'Please wait…' : label}</button>
     </fieldset>

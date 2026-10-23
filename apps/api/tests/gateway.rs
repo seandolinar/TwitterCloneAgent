@@ -33,12 +33,17 @@ const ALL: &[&str] = &[
 const READ: &[&str] = &["profiles.read", "posts.read", "feed.read"];
 
 async fn setup(limit: u32) -> (PgPool, Arc<BrowserAuth>, Router, Router) {
+    setup_with_origin(limit, "http://localhost:3000").await
+}
+
+async fn setup_with_origin(limit: u32, origin: &str) -> (PgPool, Arc<BrowserAuth>, Router, Router) {
     let pool = support::fresh_pool().await;
     MIGRATOR.run(&pool).await.unwrap();
-    let values: HashMap<_, _> = ["DATABASE_URL", "CSRF_SECRET", "RATE_LIMIT_SECRET"]
+    let mut values: HashMap<_, _> = ["DATABASE_URL", "CSRF_SECRET", "RATE_LIMIT_SECRET"]
         .into_iter()
         .map(|key| (key.into(), std::env::var(key).unwrap()))
         .collect();
+    values.insert("APP_ORIGIN".into(), origin.into());
     let auth = Arc::new(
         BrowserAuth::new(
             pool.clone(),
@@ -663,5 +668,102 @@ async fn browser_and_gateway_share_one_user_write_budget_without_identity_fallba
         .await
         .unwrap();
     assert_eq!(posts, 1);
+    pool.close().await;
+}
+
+// Run the distributed example against real Rust HTTP and PostgreSQL. Only the
+// upstream provider/proxy boundaries below are fixtures, not runtime bypasses.
+#[allow(dead_code)]
+#[path = "../examples/social_api.rs"]
+mod social_example;
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn executable_documented_requests_match_the_application_contract() {
+    use axum::{
+        extract::Request as AxumRequest,
+        middleware::{self, Next},
+    };
+    let web_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let web = format!("http://{}", web_listener.local_addr().unwrap());
+    let (pool, auth, browser, gateway) = setup_with_origin(30, &web).await;
+    let (alice, token) = user(&pool, &auth.accounts, "example_alice").await;
+    key(&pool, alice, "key_example_write", ALL).await;
+    key(&pool, alice, "key_example_read", READ).await;
+    let gateway = gateway.layer(middleware::from_fn(
+        move |mut request: AxumRequest, next: Next| async move {
+            // Replay the same upstream principal after revocation: local denial
+            // cannot depend on provider propagation.
+            request.headers_mut().remove("x-unkey-principal");
+            let principal = match request
+                .headers()
+                .get(header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+            {
+                Some("Bearer example-write-fixture") => {
+                    Some(principal(alice, "key_example_write", ALL))
+                }
+                Some("Bearer example-read-fixture") => {
+                    Some(principal(alice, "key_example_read", READ))
+                }
+                _ => None,
+            };
+            if let Some(principal) = principal {
+                request
+                    .headers_mut()
+                    .insert("x-unkey-principal", principal.to_string().parse().unwrap());
+            }
+            next.run(request).await
+        },
+    ));
+    let browser = Router::new()
+        .fallback_service(browser)
+        .layer(middleware::from_fn(
+            |mut request: AxumRequest, next: Next| async move {
+                let path = request
+                    .uri()
+                    .path()
+                    .replacen("/api/auth/", "/browser/auth/", 1);
+                *request.uri_mut() = path.parse().unwrap();
+                next.run(request).await
+            },
+        ));
+    let gateway_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let gateway_url = format!("http://{}", gateway_listener.local_addr().unwrap());
+    let web_server = tokio::spawn(async move {
+        axum::serve(
+            web_listener,
+            browser.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    let gateway_server = tokio::spawn(async move {
+        axum::serve(gateway_listener, gateway).await.unwrap();
+    });
+    let result = social_example::run(social_example::Inputs {
+        gateway: gateway_url,
+        browser: web,
+        write_key: "example-write-fixture".into(),
+        read_key: "example-read-fixture".into(),
+        read_key_id: "key_example_read".into(),
+        session_cookie: format!("twitterclone_dev_session={}", token.expose_secret()),
+    })
+    .await;
+    web_server.abort();
+    gateway_server.abort();
+    result.unwrap();
+    let posts: i64 = sqlx::query_scalar("SELECT count(*) FROM posts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(posts, 0, "example deletes only its two known created posts");
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT revoked_at IS NOT NULL FROM api_keys WHERE key_id='key_example_read'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(revoked);
     pool.close().await;
 }

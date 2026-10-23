@@ -32,14 +32,14 @@ impl IntoResponse for ApiError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct ErrorEnvelope {
+pub(crate) struct ErrorEnvelope {
     error: ErrorDetails,
     request_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 struct ErrorDetails {
     code: &'static str,
     message: &'static str,

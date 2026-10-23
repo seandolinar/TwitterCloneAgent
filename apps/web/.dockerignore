@@ -8,6 +8,8 @@
 !src/**
 !server/
 !server/**
+!public/
+!public/**
 
 # Never include local credentials, even beneath an allowed directory.
 **/.env

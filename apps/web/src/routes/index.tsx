@@ -1,8 +1,18 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { sessionOptions } from '../lib/session'
+import { Composer, Timeline } from '../components/social'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
+  const { data: session } = useSuspenseQuery(sessionOptions)
+  if (session?.verified) return <main className="page social-page">
+    <h1>Home feed</h1>
+    <p>Your posts and the people you follow, newest first.</p>
+    <Composer />
+    <Timeline path="/api/v1/feed" label="Home feed posts" />
+  </main>
   return (
     <main className="page">
       <p className="eyebrow">TwitterCloneAgent</p>
@@ -13,10 +23,10 @@ function Home() {
       <section className="notice" aria-labelledby="status-heading">
         <h2 id="status-heading">The foundation is in place.</h2>
         <p>
-          Account onboarding and the social API are available. Feed screens and
-          integration-key management are still being built.
+          Read public profiles and posts, or verify your account to join the conversation.
         </p>
-        <p><Link to="/register">Create an account</Link> · <Link to="/login">Log in</Link></p>
+        {session ? <p><Link to="/verify-email">Verify email to use your feed and publish posts</Link></p>
+          : <p><Link to="/register">Create an account</Link> · <Link to="/login">Log in</Link></p>}
       </section>
     </main>
   )

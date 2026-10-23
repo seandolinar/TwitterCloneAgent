@@ -14,9 +14,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(Config::from_env()?);
     let command = std::env::args().nth(1);
     match command.as_deref() {
+        Some("validate") => return Ok(()),
         Some("healthcheck") => return healthcheck(config.browser_bind),
         Some("migrate") | None => {}
-        Some(_) => return Err("Usage: twitter-clone-api [healthcheck|migrate]".into()),
+        Some(_) => return Err("Usage: twitter-clone-api [validate|healthcheck|migrate]".into()),
     }
     let pool = database::connect(&config.database_url)
         .await

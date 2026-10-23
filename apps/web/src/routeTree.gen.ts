@@ -14,10 +14,15 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as ReadyzRouteImport } from './routes/readyz'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
+import { Route as PostsIdRouteImport } from './routes/posts.$id'
+import { Route as ProfilesHandleRouteImport } from './routes/profiles.$handle'
+import { Route as SettingsKeysRouteImport } from './routes/settings.keys'
+import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -44,6 +49,11 @@ const LogoutRoute = LogoutRouteImport.update({
   path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReadyzRoute = ReadyzRouteImport.update({
+  id: '/readyz',
+  path: '/readyz',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -64,6 +74,26 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PostsIdRoute = PostsIdRouteImport.update({
+  id: '/posts/$id',
+  path: '/posts/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfilesHandleRoute = ProfilesHandleRouteImport.update({
+  id: '/profiles/$handle',
+  path: '/profiles/$handle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsKeysRoute = SettingsKeysRouteImport.update({
+  id: '/settings/keys',
+  path: '/settings/keys',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsProfileRoute = SettingsProfileRouteImport.update({
+  id: '/settings/profile',
+  path: '/settings/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -71,10 +101,15 @@ export interface FileRoutesByFullPath {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
   '/api/$': typeof ApiSplatRoute
+  '/posts/$id': typeof PostsIdRoute
+  '/profiles/$handle': typeof ProfilesHandleRoute
+  '/settings/keys': typeof SettingsKeysRoute
+  '/settings/profile': typeof SettingsProfileRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -82,10 +117,15 @@ export interface FileRoutesByTo {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
   '/api/$': typeof ApiSplatRoute
+  '/posts/$id': typeof PostsIdRoute
+  '/profiles/$handle': typeof ProfilesHandleRoute
+  '/settings/keys': typeof SettingsKeysRoute
+  '/settings/profile': typeof SettingsProfileRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -94,10 +134,15 @@ export interface FileRoutesById {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
   '/api/$': typeof ApiSplatRoute
+  '/posts/$id': typeof PostsIdRoute
+  '/profiles/$handle': typeof ProfilesHandleRoute
+  '/settings/keys': typeof SettingsKeysRoute
+  '/settings/profile': typeof SettingsProfileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -107,10 +152,15 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/logout'
+    | '/readyz'
     | '/register'
     | '/reset-password'
     | '/verify-email'
     | '/api/$'
+    | '/posts/$id'
+    | '/profiles/$handle'
+    | '/settings/keys'
+    | '/settings/profile'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -118,10 +168,15 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/logout'
+    | '/readyz'
     | '/register'
     | '/reset-password'
     | '/verify-email'
     | '/api/$'
+    | '/posts/$id'
+    | '/profiles/$handle'
+    | '/settings/keys'
+    | '/settings/profile'
   id:
     | '__root__'
     | '/'
@@ -129,10 +184,15 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/logout'
+    | '/readyz'
     | '/register'
     | '/reset-password'
     | '/verify-email'
     | '/api/$'
+    | '/posts/$id'
+    | '/profiles/$handle'
+    | '/settings/keys'
+    | '/settings/profile'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -141,10 +201,15 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
+  ReadyzRoute: typeof ReadyzRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   ApiSplatRoute: typeof ApiSplatRoute
+  PostsIdRoute: typeof PostsIdRoute
+  ProfilesHandleRoute: typeof ProfilesHandleRoute
+  SettingsKeysRoute: typeof SettingsKeysRoute
+  SettingsProfileRoute: typeof SettingsProfileRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -184,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/readyz': {
+      id: '/readyz'
+      path: '/readyz'
+      fullPath: '/readyz'
+      preLoaderRoute: typeof ReadyzRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -212,6 +284,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/posts/$id': {
+      id: '/posts/$id'
+      path: '/posts/$id'
+      fullPath: '/posts/$id'
+      preLoaderRoute: typeof PostsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profiles/$handle': {
+      id: '/profiles/$handle'
+      path: '/profiles/$handle'
+      fullPath: '/profiles/$handle'
+      preLoaderRoute: typeof ProfilesHandleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/keys': {
+      id: '/settings/keys'
+      path: '/settings/keys'
+      fullPath: '/settings/keys'
+      preLoaderRoute: typeof SettingsKeysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/profile': {
+      id: '/settings/profile'
+      path: '/settings/profile'
+      fullPath: '/settings/profile'
+      preLoaderRoute: typeof SettingsProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -221,10 +321,15 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
+  ReadyzRoute: ReadyzRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   ApiSplatRoute: ApiSplatRoute,
+  PostsIdRoute: PostsIdRoute,
+  ProfilesHandleRoute: ProfilesHandleRoute,
+  SettingsKeysRoute: SettingsKeysRoute,
+  SettingsProfileRoute: SettingsProfileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

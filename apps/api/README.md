@@ -63,9 +63,14 @@ the root `.env` and supplies these settings to the API and migration service.
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Supplied together when set; required in production; never printed |
 | `UNKEY_MANAGEMENT_ROOT_KEY`, `UNKEY_API_ID`, `UNKEY_KEYSPACE_ID` | Optional as a group; API IDs start `api_`, keyspace IDs start `ks_`; partial configuration fails |
 
-Production additionally requires HTTPS and external authenticated SMTP, and
-rejects the local mail catcher configuration. Successful configuration validation
-alone is not evidence that the unfinished scaffold is production-ready.
+Production additionally requires HTTPS, nonzero loopback Rust bindings, external
+authenticated SMTP, and an external authenticated PostgreSQL URL with
+`sslmode=verify-full`. Local SMTP, unverified database TLS, duplicate SSL modes,
+and security-relevant URL aliases are rejected. Compute mode additionally
+validates platform/internal ports, exact loopback upstream URLs, HOST, and
+required environment-specific Unkey configuration. See
+`docs/deployment/unkey-compute.md` for the combined image and configuration.
+Successful validation is not evidence of a live production deployment.
 
 Generate each security secret independently with `openssl rand -hex 32` in your
 own terminal. Keep the configured values stable across restarts and shared by
@@ -508,13 +513,14 @@ was used. Lost access to the email inbox has no administrator/MFA recovery
 fallback in this MVP. Password reset does not implicitly verify an account,
 does not log it in, and does not rotate the independently managed application
 security secrets. Provider cleanup may lag local key revocation; running
-requests are not cancelled. Full key-denial acceptance remains tracked in 3.5.
+requests are not cancelled. Immediate application key denial is covered by
+gateway tests; hosted-provider acceptance remains separately tracked in 9.3.
 
 For production, require HTTPS, Secure host-only cookies, private listeners,
 exact configured origin, independently generated stable security secrets shared
-across replicas, authenticated SMTP, and database availability. Production TLS
-database/Compute delivery checks and the remaining product work are still
-pending: passing account configuration checks is not production readiness.
+across replicas, authenticated SMTP, and certificate-verified database TLS.
+Local combined-image/TLS/failure tests are implemented; real external SMTP,
+hosted-provider acceptance, and any actual deployment remain unverified.
 
 ## Atomic password recovery
 

@@ -1,0 +1,25 @@
+{
+  "project": "REPLACE_PROJECT",
+  "app": "twitterclone",
+  "environment": "preview",
+  "policies": [
+    {
+      "name": "Authenticate integration root",
+      "enabled": true,
+      "match": [{ "path": { "path": { "exact": "/v1" } } }],
+      "keyauth": {
+        "keyspaces": ["ks_REPLACE_PREVIEW"],
+        "locations": [{ "bearer": {} }]
+      }
+    },
+    {
+      "name": "Authenticate integration operations",
+      "enabled": true,
+      "match": [{ "path": { "path": { "prefix": "/v1/" } } }],
+      "keyauth": {
+        "keyspaces": ["ks_REPLACE_PREVIEW"],
+        "locations": [{ "bearer": {} }]
+      }
+    }
+  ]
+}

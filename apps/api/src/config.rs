@@ -73,11 +73,11 @@ impl Config {
             _ => return Err(ConfigError("APP_ENV must be development or production")),
         };
         let production = environment == Environment::Production;
-        let browser_bind = get("BROWSER_BIND")
+        let browser_bind: SocketAddr = get("BROWSER_BIND")
             .unwrap_or_else(|| "127.0.0.1:8080".into())
             .parse()
             .map_err(|_| ConfigError("BROWSER_BIND must be an IP address and port"))?;
-        let gateway_bind = get("GATEWAY_BIND")
+        let gateway_bind: SocketAddr = get("GATEWAY_BIND")
             .unwrap_or_else(|| "127.0.0.1:8081".into())
             .parse()
             .map_err(|_| ConfigError("GATEWAY_BIND must be an IP address and port"))?;
@@ -121,6 +121,43 @@ impl Config {
         if !matches!(database.scheme(), "postgres" | "postgresql") || database.host_str().is_none()
         {
             return Err(ConfigError("DATABASE_URL must be a valid PostgreSQL URL"));
+        }
+        if production {
+            if !browser_bind.ip().is_loopback()
+                || !gateway_bind.ip().is_loopback()
+                || browser_bind.port() == 0
+                || gateway_bind.port() == 0
+            {
+                return Err(ConfigError(
+                    "Production Rust listeners must use nonzero loopback ports",
+                ));
+            }
+            let parameters: Vec<_> = database.query_pairs().collect();
+            if database.username().is_empty()
+                || database
+                    .password()
+                    .is_none_or(|password| password.trim().is_empty())
+                || database.path().trim_matches('/').is_empty()
+                || local_host(database.host_str().unwrap_or_default())
+                || parameters
+                    .iter()
+                    .filter(|(key, _)| key == "sslmode")
+                    .count()
+                    != 1
+                || !parameters
+                    .iter()
+                    .any(|(key, value)| key == "sslmode" && value == "verify-full")
+                || parameters.iter().any(|(key, _)| {
+                    !matches!(
+                        key.as_ref(),
+                        "sslmode" | "sslrootcert" | "sslcert" | "sslkey" | "application_name"
+                    )
+                })
+            {
+                return Err(ConfigError(
+                    "Production DATABASE_URL requires an external authenticated database, sslmode=verify-full, and only canonical TLS/application_name parameters",
+                ));
+            }
         }
         let csrf_secret = required_secret(
             get("CSRF_SECRET"),
@@ -184,12 +221,20 @@ impl Config {
         }
         if production
             && (!smtp.tls
+                || local_host(&smtp.host)
+                || smtp.host.chars().any(char::is_whitespace)
                 || matches!(
                     smtp.host.to_lowercase().as_str(),
                     "mail" | "mailpit" | "localhost" | "127.0.0.1" | "::1"
                 )
-                || smtp.username.is_none()
-                || smtp.password.is_none())
+                || smtp
+                    .username
+                    .as_ref()
+                    .is_none_or(|value| value.trim().is_empty())
+                || smtp
+                    .password
+                    .as_ref()
+                    .is_none_or(|value| value.trim().is_empty()))
         {
             return Err(ConfigError(
                 "Production requires external SMTP with TLS and authentication",
@@ -217,6 +262,50 @@ impl Config {
                 ));
             }
         };
+        if get("WEB_RUNTIME_MODE").as_deref() == Some("compute") {
+            if !production || get("HOST").as_deref() != Some("0.0.0.0") {
+                return Err(ConfigError(
+                    "Compute requires APP_ENV=production and HOST=0.0.0.0",
+                ));
+            }
+            let port = get("PORT")
+                .filter(|port| port.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|port| port.parse::<u16>().ok())
+                .filter(|port| *port > 0)
+                .ok_or(ConfigError("Compute PORT must be 1–65535"))?;
+            if port == browser_bind.port() || port == gateway_bind.port() {
+                return Err(ConfigError(
+                    "Compute PORT must not collide with either Rust listener",
+                ));
+            }
+            for (name, bind) in [
+                ("API_BASE_URL", browser_bind),
+                ("GATEWAY_API_BASE_URL", gateway_bind),
+            ] {
+                let origin = get(name).and_then(|value| Url::parse(&value).ok());
+                let expected = Url::parse(&format!("http://{bind}")).expect("socket origin");
+                if origin.as_ref() != Some(&expected) {
+                    return Err(ConfigError(
+                        "Compute upstream origins must exactly match the loopback Rust bindings",
+                    ));
+                }
+            }
+            if unkey.is_none() {
+                return Err(ConfigError(
+                    "Compute requires environment-specific Unkey management configuration",
+                ));
+            }
+            if values.keys().any(|key| {
+                matches!(
+                    key.as_str(),
+                    "NITRO_PORT" | "NITRO_HOST" | "NITRO_UNIX_SOCKET"
+                )
+            }) {
+                return Err(ConfigError(
+                    "Compute must use PORT/HOST, not Nitro port/host/socket overrides",
+                ));
+            }
+        }
         Ok(Self {
             environment,
             browser_bind,
@@ -232,6 +321,17 @@ impl Config {
             unkey,
         })
     }
+}
+
+fn local_host(host: &str) -> bool {
+    let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    matches!(
+        host.as_str(),
+        "localhost" | "db" | "postgres" | "postgresql"
+    ) || host.ends_with(".localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
 }
 
 fn required_secret(value: Option<String>, message: &'static str) -> Result<String, ConfigError> {
@@ -303,6 +403,10 @@ mod tests {
             ("SMTP_TLS", "true"),
             ("SMTP_USERNAME", "test-only"),
             ("SMTP_PASSWORD", "test-fixture-not-a-real-credential"),
+            (
+                "DATABASE_URL",
+                "postgres://fixture:fixture@database.example.com/social?sslmode=verify-full",
+            ),
         ] {
             values.insert(key.into(), value.into());
         }
@@ -353,6 +457,59 @@ mod tests {
     #[test]
     fn secure_production_is_accepted() {
         assert!(Config::from_values(&production()).is_ok());
+    }
+
+    #[test]
+    fn production_requires_verified_database_tls_without_parameter_bypasses() {
+        for database in [
+            "postgres://fixture:fixture@database.example.com/social",
+            "postgres://fixture:fixture@database.example.com/social?sslmode=require",
+            "postgres://fixture:fixture@database.example.com/social?sslmode=verify-ca",
+            "postgres://fixture:fixture@database.example.com/social?sslmode=verify-full&sslmode=disable",
+            "postgres://fixture:fixture@database.example.com/social?sslmode=verify-full&ssl-mode=disable",
+            "postgres://fixture@database.example.com/social?sslmode=verify-full",
+            "postgres://fixture:fixture@localhost/social?sslmode=verify-full",
+            "postgres://fixture:fixture@database.example.com/social?sslmode=verify-full&host=localhost",
+        ] {
+            let mut values = production();
+            values.insert("DATABASE_URL".into(), database.into());
+            reject(&values, "DATABASE_URL");
+        }
+    }
+
+    #[test]
+    fn compute_validates_platform_ports_loopback_origins_and_required_configuration() {
+        let mut values = production();
+        for (key, value) in [
+            ("WEB_RUNTIME_MODE", "compute"),
+            ("HOST", "0.0.0.0"),
+            ("PORT", "8080"),
+            ("BROWSER_BIND", "127.0.0.1:8081"),
+            ("GATEWAY_BIND", "127.0.0.1:8082"),
+            ("API_BASE_URL", "http://127.0.0.1:8081"),
+            ("GATEWAY_API_BASE_URL", "http://127.0.0.1:8082"),
+            ("UNKEY_MANAGEMENT_ROOT_KEY", "fixture-not-a-real-key"),
+            ("UNKEY_API_ID", "api_fixture"),
+            ("UNKEY_KEYSPACE_ID", "ks_fixture"),
+        ] {
+            values.insert(key.into(), value.into());
+        }
+        assert!(Config::from_values(&values).is_ok());
+        for (key, value, expected) in [
+            ("PORT", "", "PORT"),
+            ("PORT", "0", "PORT"),
+            ("PORT", "65536", "PORT"),
+            ("PORT", "8081", "collide"),
+            ("HOST", "127.0.0.1", "HOST"),
+            ("BROWSER_BIND", "0.0.0.0:8081", "loopback"),
+            ("API_BASE_URL", "https://public.example.com", "upstream"),
+            ("GATEWAY_API_BASE_URL", "http://127.0.0.1:8081", "upstream"),
+            ("NITRO_PORT", "9999", "Nitro"),
+        ] {
+            let mut invalid = values.clone();
+            invalid.insert(key.into(), value.into());
+            reject(&invalid, expected);
+        }
     }
 
     #[test]

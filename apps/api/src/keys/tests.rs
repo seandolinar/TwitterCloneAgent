@@ -15,6 +15,7 @@ const SECRET: &str = "tc_fixture_one_time_secret_not_a_real_provider_key_1234";
 
 struct Provider {
     creates: AtomicUsize,
+    verifies: AtomicUsize,
     fail_delete: AtomicBool,
     entered: Notify,
     delay: Duration,
@@ -61,12 +62,17 @@ async fn setup(delay: Duration) -> Fixture {
     let mut keys = Keys::new(pool.clone(), &Config::from_values(&values).unwrap()).unwrap();
     let provider = Arc::new(Provider {
         creates: AtomicUsize::new(0),
+        verifies: AtomicUsize::new(0),
         fail_delete: AtomicBool::new(false),
         entered: Notify::new(),
         delay,
         requests: Mutex::new(Vec::new()),
     });
     let router = Router::new()
+        .route("/v2/keys.verifyKey", post(|State(state): State<Arc<Provider>>| async move {
+            state.verifies.fetch_add(1, Ordering::SeqCst);
+            StatusCode::SERVICE_UNAVAILABLE
+        }))
         .route("/v2/keys.createKey", post(|State(state): State<Arc<Provider>>, Json(body): Json<serde_json::Value>| async move {
             state.requests.lock().unwrap().push(body);
             let index = state.creates.fetch_add(1, Ordering::SeqCst);
@@ -219,6 +225,8 @@ async fn creation_rechecks_verification_recent_password_and_live_session_before_
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL; use tests/with_postgres.py"]
 async fn revocation_is_owner_only_local_first_idempotent_and_cleanup_retries_durably() {
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
     let fixture = setup(Duration::ZERO).await;
     let (alice, _) = user(&fixture, "alice", true).await;
     let (bob, _) = user(&fixture, "bob", true).await;
@@ -228,6 +236,32 @@ async fn revocation_is_owner_only_local_first_idempotent_and_cleanup_retries_dur
         .await
         .unwrap();
     let id = &issued.metadata.key_id;
+    let social = crate::social::Social::new(
+        fixture.pool.clone(),
+        &std::env::var("RATE_LIMIT_SECRET").unwrap(),
+        30,
+    )
+    .unwrap();
+    let gateway =
+        crate::http::gateway_router(fixture.pool.clone(), social, Some("ks_fixture".into()));
+    let principal = serde_json::json!({
+        "version":"v1","type":"API_KEY","subject":alice.identity.id,
+        "identity":{"externalId":alice.identity.id},
+        "source":{"key":{"keyId":id,"keySpaceId":"ks_fixture",
+            "permissions":["profiles.read","posts.read","feed.read"]}}
+    })
+    .to_string();
+    let read = || {
+        Request::builder()
+            .uri("/v1/me")
+            .header("x-unkey-principal", &principal)
+            .body(Body::empty())
+            .unwrap()
+    };
+    assert_eq!(
+        gateway.clone().oneshot(read()).await.unwrap().status(),
+        StatusCode::OK
+    );
     assert_eq!(fixture.keys.revoke(&bob, id).await, Err(KeyError::NotFound));
     assert_eq!(
         fixture.keys.list(&alice).await.unwrap().items[0].status,
@@ -242,6 +276,10 @@ async fn revocation_is_owner_only_local_first_idempotent_and_cleanup_retries_dur
     );
     let first = fixture.keys.cleanup_batch().await.unwrap();
     assert_eq!((first.claimed, first.retried), (1, 1));
+    assert_eq!(
+        gateway.clone().oneshot(read()).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
     let pending: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM delivery_jobs WHERE kind='unkey_revoke' AND attempts=1",
     )
@@ -263,9 +301,28 @@ async fn revocation_is_owner_only_local_first_idempotent_and_cleanup_retries_dur
     let list = fixture.keys.list(&alice).await.unwrap();
     assert_eq!(list.items[0].status, "revoked");
     assert!(list.items[0].provider_revoked_at.is_some());
+    assert_eq!(
+        gateway.clone().oneshot(read()).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
     fixture.keys.revoke(&alice, id).await.unwrap();
     assert_eq!(fixture.keys.cleanup_batch().await.unwrap().claimed, 0);
+    assert_eq!(fixture.provider.creates.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        fixture.provider.verifies.load(Ordering::SeqCst),
+        0,
+        "Rust must never spend another verification or auto-applied key limit"
+    );
+    assert_eq!(
+        fixture.provider.requests.lock().unwrap().len(),
+        3,
+        "one creation, one failed soft deletion, one successful retry only"
+    );
     fixture.pool.close().await;
+    assert_eq!(
+        gateway.oneshot(read()).await.unwrap().status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
 }
 
 #[tokio::test]
