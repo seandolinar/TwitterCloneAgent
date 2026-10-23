@@ -13,6 +13,41 @@ use tokio::sync::Notify;
 const PASSWORD: &str = "isolated key management fixture password";
 const SECRET: &str = "tc_fixture_one_time_secret_not_a_real_provider_key_1234";
 
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn email_disabled_can_issue_keys_without_fabricating_mailbox_verification() {
+    let mut fixture = setup(Duration::ZERO).await;
+    let (session, _) = user(&fixture, "noemail", false).await;
+    assert!(!session.identity.verified);
+    fixture.keys.email_enabled = false;
+    let issued = fixture
+        .keys
+        .create(&session, input("No email fixture"))
+        .await
+        .unwrap();
+    assert_eq!(
+        issued.metadata.permissions,
+        vec!["profiles.read", "posts.read", "feed.read"]
+    );
+    fixture
+        .keys
+        .revoke(&session, &issued.metadata.key_id)
+        .await
+        .unwrap();
+    fixture.keys.email_enabled = true;
+    assert!(matches!(
+        fixture.keys.list(&session).await,
+        Err(KeyError::Unverified)
+    ));
+    let verified: bool =
+        sqlx::query_scalar("SELECT verified_at IS NOT NULL FROM users WHERE id=$1")
+            .bind(session.identity.id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    assert!(!verified);
+}
+
 struct Provider {
     creates: AtomicUsize,
     verifies: AtomicUsize,

@@ -49,13 +49,19 @@ struct PrincipalKey {
 struct Gateway {
     pool: PgPool,
     keyspace: Option<String>,
+    email_enabled: bool,
 }
 
 pub(crate) fn routes(pool: PgPool, social: Social, keyspace: Option<String>) -> Router {
+    let email_enabled = social.email_enabled;
     Router::new()
         .nest("/v1", social_http::routes(social))
         .layer(middleware::from_fn_with_state(
-            Arc::new(Gateway { pool, keyspace }),
+            Arc::new(Gateway {
+                pool,
+                keyspace,
+                email_enabled,
+            }),
             authenticate,
         ))
 }
@@ -146,13 +152,14 @@ async fn authenticate(
          JOIN users AS account ON account.id = api_key.user_id \
          WHERE api_key.key_id = $1 AND api_key.keyspace_id = $2 AND api_key.user_id = $3 \
          AND api_key.revoked_at IS NULL AND api_key.expires_at > clock_timestamp() \
-         AND account.verified_at IS NOT NULL \
+         AND (account.verified_at IS NOT NULL OR NOT $5) \
          AND ($4::bigint IS NULL OR $4 > extract(epoch FROM clock_timestamp()) * 1000)",
     )
     .bind(&principal.source.key.key_id)
     .bind(expected_keyspace)
     .bind(owner)
     .bind(principal.source.key.expires_at)
+    .bind(state.email_enabled)
     .fetch_optional(&state.pool)
     .await;
     let (id, local_permissions) = match row {

@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { AccountForm, Field, passwordFrom } from '../components/account-form'
 import { PlainText } from '../components/plain-text'
 import { ReadFailure, SocialAction } from '../components/social'
-import { ApiFailure, type KeyList, type KeyMetadata } from '../lib/api'
+import { ApiFailure, accountReady, type KeyList, type KeyMetadata } from '../lib/api'
 import { sessionOptions } from '../lib/session'
 import { codePoints } from '../lib/text'
 
@@ -17,7 +17,7 @@ const readOnly = new Set<string>(['profiles.read', 'posts.read', 'feed.read'])
 function KeySettings() {
   const { data: session } = useSuspenseQuery(sessionOptions)
   if (!session) return <main className="page"><h1>API keys</h1><Link to="/login">Log in to manage keys</Link></main>
-  if (!session.verified) return <main className="page"><h1>API keys</h1><Link to="/verify-email">Verify email before managing keys</Link></main>
+  if (!accountReady(session)) return <main className="page"><h1>API keys</h1><Link to="/verify-email">Verify email before managing keys</Link></main>
   return <Keys key={session.id} />
 }
 

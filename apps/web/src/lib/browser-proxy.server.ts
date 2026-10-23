@@ -8,7 +8,7 @@ const MAX_BODY_BYTES = 16 * 1024
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const HANDLE = '[A-Za-z0-9_]{3,30}'
 const routes: ReadonlyArray<{ path: RegExp; methods: string[]; query?: string[] }> = [
-  { path: /^\/api\/auth\/(csrf|session)$/, methods: ['GET'] },
+  { path: /^\/api\/auth\/(csrf|session|settings)$/, methods: ['GET'] },
   { path: /^\/api\/auth\/(register|login|logout|verify-email|resend-verification|forgot-password|reset-password|reauthenticate)$/, methods: ['POST'] },
   { path: /^\/api\/auth\/keys$/, methods: ['GET', 'POST'] },
   { path: /^\/api\/auth\/keys\/key_[A-Za-z0-9_]+$/, methods: ['DELETE'] },

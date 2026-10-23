@@ -86,6 +86,15 @@ Do not turn on Compute mode for the ordinary publicly accessible browser service
 
 ## Runtime secrets, PostgreSQL, and SMTP
 
+The MVP supports `EMAIL_ENABLED=false` in Compute as well as locally. In that
+mode no SMTP credential or sender-domain setup is required: account verification,
+outgoing mail and email password recovery are disabled, and authenticated accounts
+can use social/key features without mailbox verification. Existing verification
+timestamps are preserved. Set the flag to true to restore the email requirements
+below. Omission defaults to true for compatibility with existing deployments.
+The app still requires an exact HTTPS browser origin; the hosting domain may be
+used without configuring a separate email-sending domain.
+
 Populate `infra/compute/runtime.env.example` only in private environment-specific
 secret management. Do not commit a populated file, put secrets into API examples,
 build assets, command arguments/shell history, request logs, or chat.
@@ -109,7 +118,7 @@ build assets, command arguments/shell history, request logs, or chat.
   at least 32 bytes, distinct, stable across restarts, identical across replicas
   **within** this environment only. Never use known example values. Coordinate
   rotation across replicas; rate-secret rotation changes bucket identifiers.
-- `EMAIL_FROM`, external `SMTP_HOST`, SMTP port (usually 587), `SMTP_TLS=true`,
+- When `EMAIL_ENABLED=true`: `EMAIL_FROM`, external `SMTP_HOST`, SMTP port (usually 587), `SMTP_TLS=true`,
   and both nonblank SMTP credentials are required. The maintained client uses
   STARTTLS with certificate verification. A mail catcher/localhost is rejected.
   Configure sender/domain authorization, inbox delivery, spam handling, and
@@ -211,6 +220,8 @@ fixture identities/configuration; it does not upload source or contact Unkey.
 It preserves named fixture data volumes and never touches a developer's `.env`.
 Successful local results are **not** live Compute, hosted SMTP, or real Unkey
 acceptance. Record the actual commands/results in the change evidence.
+The latest [local validation report](../validation/twitter-mvp.md) records
+executed checks and the limits of that evidence.
 
 After **separate deployment authorization**, use this live checklist:
 

@@ -1,7 +1,7 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { useInfiniteQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { ApiFailure, type Post, type Profile } from '../lib/api'
+import { ApiFailure, accountReady, type Post, type Profile } from '../lib/api'
 import { socialError, socialKey, timelineOptions, uniquePosts } from '../lib/social'
 import { sessionOptions } from '../lib/session'
 import { codePoints, validPostBody } from '../lib/text'
@@ -27,7 +27,7 @@ export function PostCard({ post }: { post: Post }) {
     <p><Link to="/posts/$id" params={{ id: post.id }}>
       <time dateTime={post.createdAt}>{new Date(post.createdAt).toISOString().replace('T', ' ').replace('.000Z', ' UTC')}</time>
     </Link> · {post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}</p>
-    {session?.verified && <div className="actions">
+    {accountReady(session) && <div className="actions">
       <SocialAction label={post.viewerLikes ? 'Unlike' : 'Like'} pressed={post.viewerLikes}
         action={async () => {
           await api.mutate(`/api/v1/posts/${post.id}/like`, post.viewerLikes ? 'DELETE' : 'PUT')
@@ -40,7 +40,7 @@ export function PostCard({ post }: { post: Post }) {
         }} /><button type="button" onClick={() => setConfirmDelete(false)}>Keep post</button></>
         : <button type="button" onClick={() => setConfirmDelete(true)}>Delete post</button>)}
     </div>}
-    {session && !session.verified && <p><Link to="/verify-email">Verify email to interact</Link></p>}
+    {session && !accountReady(session) && <p><Link to="/verify-email">Verify email to interact</Link></p>}
   </article>
 }
 
@@ -70,7 +70,7 @@ export function SocialAction({ label, pressed, action }: {
 export function FollowControl({ profile }: { profile: Profile }) {
   const { api, queryClient } = useRouter().options.context!
   const { data: session } = useSuspenseQuery(sessionOptions)
-  if (!session?.verified || session.id === profile.id) return null
+  if (!accountReady(session) || session.id === profile.id) return null
   return <SocialAction label={profile.viewerFollows ? 'Unfollow' : 'Follow'}
     pressed={profile.viewerFollows} action={async () => {
       await api.mutate(`/api/v1/me/following/${profile.id}`, profile.viewerFollows ? 'DELETE' : 'PUT')

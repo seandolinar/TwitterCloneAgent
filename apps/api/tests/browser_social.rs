@@ -17,6 +17,147 @@ use uuid::Uuid;
 mod support;
 const PASSWORD: &str = "disposable social HTTP fixture password";
 
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn email_disabled_allows_existing_and_new_unverified_accounts_without_claiming_verification()
+{
+    let pool = support::fresh_pool().await;
+    MIGRATOR.run(&pool).await.unwrap();
+    let mut values = ["DATABASE_URL", "CSRF_SECRET", "RATE_LIMIT_SECRET"]
+        .into_iter()
+        .map(|key| (key.into(), std::env::var(key).unwrap()))
+        .collect::<HashMap<String, String>>();
+    values.insert("EMAIL_ENABLED".into(), "false".into());
+    let config = Arc::new(Config::from_values(&values).unwrap());
+    let auth = Arc::new(BrowserAuth::new(pool.clone(), config).await.unwrap());
+    let social = Social::new(pool.clone(), &values["RATE_LIMIT_SECRET"], 30)
+        .unwrap()
+        .with_email_enabled(false);
+    let app = browser_router(pool.clone(), &auth, social.clone());
+    let (owner, browser) = account(&pool, &auth, &app, "noemail", false).await;
+    let (status, session, _) = browser
+        .send(&app, "GET", "/browser/auth/session", Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(session["emailEnabled"], false);
+    assert_eq!(session["verified"], false);
+    assert_eq!(
+        browser
+            .send(&app, "GET", "/browser/auth/settings", Value::Null)
+            .await
+            .1,
+        json!({"emailEnabled":false})
+    );
+    let (status, post, _) = browser
+        .send(
+            &app,
+            "POST",
+            "/browser/v1/posts",
+            json!({"body":"No email needed"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(
+        browser
+            .send(&app, "GET", "/browser/v1/feed", Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        browser
+            .send(
+                &app,
+                "POST",
+                "/browser/auth/reauthenticate",
+                json!({"password":PASSWORD})
+            )
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        browser
+            .send(&app, "GET", "/browser/auth/keys", Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    for (path, body) in [
+        ("forgot-password", json!({"email":"noemail@example.test"})),
+        ("resend-verification", json!({})),
+        ("verify-email", json!({"token":"unused-token"})),
+        (
+            "reset-password",
+            json!({"token":"unused-token", "password":PASSWORD}),
+        ),
+    ] {
+        let (status, result, _) = browser
+            .send(&app, "POST", &format!("/browser/auth/{path}"), body)
+            .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(result["error"]["code"], "email_disabled");
+    }
+    let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM delivery_jobs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(jobs, 0);
+    let stored_verified: bool =
+        sqlx::query_scalar("SELECT verified_at IS NOT NULL FROM users WHERE id=$1")
+            .bind(owner)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!stored_verified);
+
+    // Real integration adapter: disabling email changes only its mailbox check.
+    sqlx::query("INSERT INTO api_keys(key_id,user_id,keyspace_id,label,masked_hint,permissions,expires_at) VALUES('key_noemail',$1,'ks_fixture','Fixture','masked',ARRAY['profiles.read'],now()+interval '1 day')")
+        .bind(owner).execute(&pool).await.unwrap();
+    let principal = json!({"version":"v1","type":"API_KEY","subject":owner,"identity":{"externalId":owner},
+        "source":{"key":{"keyId":"key_noemail","keySpaceId":"ks_fixture","permissions":["profiles.read"]}}}).to_string();
+    for (email_enabled, expected) in [(false, StatusCode::OK), (true, StatusCode::UNAUTHORIZED)] {
+        let gateway = twitter_clone_api::http::gateway_router(
+            pool.clone(),
+            social.clone().with_email_enabled(email_enabled),
+            Some("ks_fixture".into()),
+        );
+        let response = gateway
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/me")
+                    .header("x-unkey-principal", &principal)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+    }
+    // Re-enabling email restores the requirement for the same existing session.
+    let strict = Social::new(pool.clone(), &values["RATE_LIMIT_SECRET"], 30).unwrap();
+    let strict_app = browser_router(pool.clone(), &auth, strict);
+    assert_eq!(
+        browser
+            .send(&strict_app, "GET", "/browser/v1/feed", Value::Null)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        browser
+            .send(
+                &app,
+                "DELETE",
+                &format!("/browser/v1/posts/{}", post["id"].as_str().unwrap()),
+                Value::Null
+            )
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+}
+
 async fn setup(limit: u32) -> (PgPool, Arc<BrowserAuth>, Router) {
     let pool = support::fresh_pool().await;
     MIGRATOR.run(&pool).await.unwrap();

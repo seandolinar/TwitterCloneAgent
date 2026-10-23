@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { createServer } from 'node:http'
+import { createServer, request as rawRequest } from 'node:http'
 import { once } from 'node:events'
 import { call, onboard } from './helpers'
 import { readSocialScenario, writeSocialScenario } from './social-scenarios'
@@ -8,6 +8,45 @@ import { keySettingsScenario } from './key-scenarios'
 test.beforeAll(() => {
   if (!process.env.WEB_BASE_URL || !process.env.MAIL_BASE_URL) {
     throw new Error('Run this suite with python3 tests/with_compose.py npm --prefix apps/web run test:e2e')
+  }
+})
+
+test('real browser ingress rejects gateway spoofing and cannot split login limits with forged IPs', async ({ request }) => {
+  const origin = process.env.WEB_BASE_URL!
+  const identity = {
+    Authorization: 'Bearer forged-fixture',
+    'X-Unkey-Principal': JSON.stringify({ version: 'v1', type: 'API_KEY',
+      identity: { externalId: '00000000-0000-0000-0000-000000000001' },
+      source: { key: { keyId: 'key_fixture', keySpaceId: 'ks_fixture', permissions: ['profiles.read'] } } }),
+  }
+  expect((await request.get(origin + '/api/v1/me', { headers: identity })).status()).toBe(401)
+  // Use raw HTTP so the client does not normalize traversal before the ingress sees it.
+  for (const path of ['/v1', '/v1/me', '/api/auth/%2e%2e/v1/me', '/api/%252e%252e/auth/session', '/api//auth/session']) {
+    const status = await new Promise<number>((resolve, reject) => {
+      const outgoing = rawRequest(origin, { path, headers: identity, timeout: 5000 }, (response) => {
+        response.resume()
+        response.on('end', () => resolve(response.statusCode!))
+      })
+      outgoing.on('timeout', () => outgoing.destroy(new Error('Raw ingress fixture timed out.')))
+      outgoing.on('error', reject)
+      outgoing.end()
+    })
+    expect([400, 404]).toContain(status)
+  }
+  const bootstrap = await request.get(origin + '/api/auth/csrf')
+  expect(bootstrap.status()).toBe(200)
+  const csrf = (await bootstrap.json()).csrfToken as string
+  const email = 'unknown_' + Date.now() + '@example.test'
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const response = await request.post(origin + '/api/auth/login', {
+      headers: { ...identity, Origin: origin, 'X-CSRF-Token': csrf,
+        'X-Forwarded-For': '203.0.113.' + (attempt + 1),
+        'X-Twitterclone-Client-IP': '198.51.100.' + (attempt + 1),
+        Forwarded: 'for=192.0.2.' + (attempt + 1) },
+      data: { email, password: 'Unknown fixture password' },
+    })
+    expect(response.status()).toBe(attempt < 5 ? 401 : 429)
+    if (attempt === 5) expect(Number(response.headers()['retry-after'])).toBeGreaterThan(0)
   }
 })
 

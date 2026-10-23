@@ -44,6 +44,7 @@ pub struct BrowserContext {
     pub session: Option<ActiveSession>,
     raw_session: Option<String>,
     ip: IpAddr,
+    email_enabled: bool,
 }
 
 impl BrowserContext {
@@ -57,7 +58,7 @@ impl BrowserContext {
 
     pub fn verified(&self) -> Result<&ActiveSession, ApiError> {
         let session = self.authenticated()?;
-        if !session.identity.verified {
+        if self.email_enabled && !session.identity.verified {
             return Err(ApiError {
                 status: StatusCode::FORBIDDEN,
                 code: "verification_required",
@@ -71,7 +72,9 @@ impl BrowserContext {
 impl BrowserAuth {
     pub async fn new(pool: sqlx::PgPool, config: Arc<Config>) -> Result<Self, AccountError> {
         Ok(Self {
-            accounts: Accounts::new(pool.clone()).await?,
+            accounts: Accounts::new(pool.clone())
+                .await?
+                .with_email_enabled(config.email_enabled),
             keys: Keys::new(pool.clone(), &config).map_err(|_| AccountError::Unavailable)?,
             limiter: RateLimiter::new(pool, &config.rate_limit_secret)
                 .map_err(|_| AccountError::Unavailable)?,
@@ -88,6 +91,7 @@ impl BrowserAuth {
         self.protect(
             Router::new()
                 .route("/browser/auth/csrf", get(bootstrap))
+                .route("/browser/auth/settings", get(account_settings))
                 .route("/browser/auth/session", get(session))
                 .route("/browser/auth/register", post(register))
                 .route("/browser/auth/login", post(login))
@@ -285,6 +289,7 @@ async fn security(
         session,
         raw_session,
         ip,
+        email_enabled: auth.config.email_enabled,
     }));
     next.run(request).await
 }
@@ -323,6 +328,7 @@ struct SessionResponse {
     handle: String,
     verified: bool,
     recent_password_auth: bool,
+    email_enabled: bool,
 }
 
 async fn session(
@@ -334,7 +340,12 @@ async fn session(
         handle: session.identity.handle.clone(),
         verified: session.identity.verified,
         recent_password_auth: session.recent_password_auth,
+        email_enabled: ctx.email_enabled,
     }))
+}
+
+async fn account_settings(State(auth): State<Arc<BrowserAuth>>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({"emailEnabled": auth.config.email_enabled}))
 }
 
 #[derive(Deserialize)]

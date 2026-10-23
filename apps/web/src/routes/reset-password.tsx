@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { AccountForm, Field, passwordFrom, tokenSearch, useAccount } from '../components/account-form'
 import { ApiFailure } from '../lib/api'
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { accountSettingsOptions } from '../lib/session'
 
 export const Route = createFileRoute('/reset-password')({ validateSearch: tokenSearch, component: ResetPassword })
 
@@ -10,6 +12,11 @@ function ResetPassword() {
   const { api } = useAccount()
   const [complete, setComplete] = useState(false)
   const navigate = useNavigate()
+  const { data: settings } = useSuspenseQuery(accountSettingsOptions)
+  if (settings.emailEnabled === false) return <main className="page account-page">
+    <h1>Password recovery unavailable</h1><p>Email password recovery is disabled for this app.</p>
+    <p><Link to="/login">Return to login</Link></p>
+  </main>
   return <main className="page account-page">
     <h1>Choose a new password</h1>
     {complete ? <p role="status">Password reset. Old sessions and API keys are revoked. Log in again with your new password.</p> : token ?

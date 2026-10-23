@@ -30,6 +30,8 @@ def environment():
     env["POSTGRES_PASSWORD"] = secrets.token_hex(32)
     env["CSRF_SECRET"] = secrets.token_hex(32)
     env["RATE_LIMIT_SECRET"] = secrets.token_hex(32)
+    # Existing account acceptance explicitly exercises the supported email mode.
+    env["EMAIL_ENABLED"] = "true"
     return env
 
 

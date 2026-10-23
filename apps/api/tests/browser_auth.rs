@@ -674,7 +674,8 @@ async fn documented_account_contract_preserves_public_shapes_and_redacts_failed_
     let (_, identity) = browser
         .absorb(app.clone().oneshot(login).await.unwrap())
         .await;
-    assert_eq!(identity.as_object().unwrap().len(), 4);
+    assert_eq!(identity.as_object().unwrap().len(), 5);
+    assert_eq!(identity["emailEnabled"], true);
     assert_eq!(identity["handle"], "Fixture");
     assert_eq!(identity["verified"], false);
     assert_eq!(identity["recentPasswordAuth"], true);

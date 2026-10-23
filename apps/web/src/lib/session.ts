@@ -19,3 +19,16 @@ export const sessionOptions = queryOptions({
   retry: false,
   staleTime: 10_000,
 })
+
+const readAccountSettings = createServerFn({ method: 'GET' }).handler(async () => {
+  setResponseHeader('Cache-Control', 'private, no-store')
+  const response = await createServerApi(getRequest()).read('/api/auth/settings')
+  return decodeResponse<{ emailEnabled: boolean }>(response)
+})
+
+export const accountSettingsOptions = queryOptions({
+  queryKey: ['account-settings'],
+  queryFn: () => readAccountSettings(),
+  retry: false,
+  staleTime: 10_000,
+})

@@ -1,7 +1,7 @@
 # TwitterCloneAgent
 
 A text-first Twitter-style MVP with a Rust/Axum API, a TanStack Start frontend,
-PostgreSQL, and planned Unkey API-key/gateway integration.
+PostgreSQL, and optional Unkey API-key/gateway integration.
 
 **Current status:** container/database foundations, browser account screens and
 secure sessions/recovery, the social API (profiles, posts, relationships, and
@@ -10,6 +10,8 @@ timelines), and the allowlisted browser proxy are implemented. See the
 Feed/profile/social screens and key settings are implemented, including
 pagination, profile editing, social controls, and one-time key reveal.
 Live Unkey acceptance and any actual Compute deployment remain pending.
+See the [final local validation evidence](docs/validation/twitter-mvp.md) for
+executed checks, scenario coverage, and the outstanding credentialed check.
 Do not deploy this controlled MVP as an unrestricted public social network.
 
 Browser key-management endpoints and the optional pinned Frontline Compose
@@ -33,6 +35,13 @@ threads do not replace its checked task state. Deployment and provisioning need
 separate authorization.
 
 ## Run with Docker
+
+The MVP template uses `EMAIL_ENABLED=false`: new and existing accounts can log
+in and post immediately with email/password. No mailbox verification or email
+provider/sender-domain setup is required. Email password recovery is unavailable
+in this mode. Set `EMAIL_ENABLED=true` and recreate the services to restore
+verification and recovery; unverified accounts then need to verify. The switch
+does not mark email addresses as verified or change existing passwords/data.
 
 Requires a running Docker engine and Docker Compose. No host Rust or Node
 installation is needed to build and run the application containers.
@@ -134,8 +143,8 @@ Neither option establishes live Unkey/Compute behavior.
 
 See [the API README](apps/api/README.md) for configuration validation, HTTP
 limits, and backend behavior. Production requires HTTPS, private ingress,
-proper secrets, external authenticated SMTP, backups, and the remaining
-implementation/security work—not just a change to `APP_ENV`.
+proper secrets, external authenticated SMTP when email is enabled, backups, live-provider acceptance,
+and a public-launch security review.
 
 ## Specification-driven development
 

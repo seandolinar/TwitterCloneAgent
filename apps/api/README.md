@@ -123,7 +123,8 @@ Override positive attempt counts with `AUTH_LOGIN_ACCOUNT_IP_LIMIT`,
 `AUTH_REAUTH_ACCOUNT_IP_LIMIT`, and `AUTH_REAUTH_IP_LIMIT`. Empty/unset uses
 the defaults; zero/negative/invalid values fail startup. Windows remain fixed.
 Use identical settings across replicas. Social writes use the separate shared
-user budget documented below; per-key Unkey gateway limits remain pending.
+user budget documented below; issued keys carry auto-applied Unkey gateway
+limits whose live enforcement remains unverified under task 9.3.
 
 Run shared-limit integration tests with a disposable database:
 
@@ -568,5 +569,7 @@ tests. See [the management
 contract](UNKEY.md) for the separate `api_`/`ks_` IDs, scoped credentials,
 non-recoverable creation, configured auto-applied limits, uncertain creation
 handling, soft-deletion semantics, and the private gateway permission boundary.
-Key settings screens remain a subsequent task. No live provider
-key was created or verified as part of these fixture checks.
+The browser key settings screens are implemented; successful one-time key UI
+flows use explicit transport fixtures. No live provider key was created or
+verified as part of these checks. See the [final local validation
+evidence](../../docs/validation/twitter-mvp.md).

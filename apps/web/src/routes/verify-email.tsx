@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { AccountForm, tokenSearch, useAccount } from '../components/account-form'
-import { sessionOptions } from '../lib/session'
+import { sessionOptions, accountSettingsOptions } from '../lib/session'
 
 export const Route = createFileRoute('/verify-email')({ validateSearch: tokenSearch, component: VerifyEmail })
 
@@ -12,6 +12,11 @@ function VerifyEmail() {
   const { api, refreshSession } = useAccount()
   const { data: session } = useSuspenseQuery(sessionOptions)
   const navigate = useNavigate()
+  const { data: settings } = useSuspenseQuery(accountSettingsOptions)
+  if (settings.emailEnabled === false) return <main className="page account-page">
+    <h1>Email verification is not required</h1><p>You can log in and use your account without verifying an email address.</p>
+    <p><Link to="/login">Log in</Link> · <Link to="/">Return home</Link></p>
+  </main>
   return <main className="page account-page">
     <h1>Verify your email</h1>
     {complete ? <p role="status">Email verified. You can now log in and use protected features.</p> : token ?

@@ -114,6 +114,7 @@ pub struct Keys {
     pool: PgPool,
     limiter: RateLimiter,
     management: Option<Management>,
+    email_enabled: bool,
 }
 
 const METADATA: &str = "SELECT key_id, label AS name, masked_hint, permissions, \
@@ -135,6 +136,7 @@ impl Keys {
                 .transpose()
                 .map_err(KeyError::Provider)?,
             pool,
+            email_enabled: config.email_enabled,
         })
     }
 
@@ -152,7 +154,7 @@ impl Keys {
     pub async fn list(&self, session: &ActiveSession) -> Result<KeyList, KeyError> {
         self.throttle(session).await?;
         let mut tx = self.pool.begin().await.map_err(|_| KeyError::Unavailable)?;
-        authenticate(&mut tx, session, false).await?;
+        authenticate(&mut tx, session, false, self.email_enabled).await?;
         let query = format!("{METADATA} WHERE user_id = $1 ORDER BY created_at DESC, key_id DESC");
         let items = sqlx::query_as(sqlx::AssertSqlSafe(query))
             .bind(session.identity.id)
@@ -174,7 +176,7 @@ impl Keys {
         self.throttle(session).await?;
         input.validate().map_err(KeyError::Provider)?;
         let mut tx = self.pool.begin().await.map_err(|_| KeyError::Unavailable)?;
-        authenticate(&mut tx, session, true).await?;
+        authenticate(&mut tx, session, true, self.email_enabled).await?;
         let management = self
             .management
             .as_ref()
@@ -262,7 +264,7 @@ impl Keys {
     pub async fn revoke(&self, session: &ActiveSession, key_id: &str) -> Result<(), KeyError> {
         self.throttle(session).await?;
         let mut tx = self.pool.begin().await.map_err(|_| KeyError::Unavailable)?;
-        authenticate(&mut tx, session, false).await?;
+        authenticate(&mut tx, session, false, self.email_enabled).await?;
         let revoked: Option<bool> = sqlx::query_scalar(
             "SELECT revoked_at IS NOT NULL FROM api_keys WHERE key_id = $1 AND user_id = $2 FOR UPDATE",
         ).bind(key_id).bind(session.identity.id).fetch_optional(&mut *tx).await.map_err(|_| KeyError::Unavailable)?;
@@ -346,6 +348,7 @@ async fn authenticate(
     connection: &mut PgConnection,
     session: &ActiveSession,
     recent: bool,
+    email_enabled: bool,
 ) -> Result<(), KeyError> {
     // Account first, then fresh session query. Holding the account lock across
     // provider creation and local commit serializes issuance with password reset.
@@ -357,8 +360,8 @@ async fn authenticate(
             .map_err(|_| KeyError::Unavailable)?;
     match verified {
         None => return Err(KeyError::Unauthenticated),
-        Some(false) => return Err(KeyError::Unverified),
-        Some(true) => {}
+        Some(false) if email_enabled => return Err(KeyError::Unverified),
+        Some(_) => {}
     }
     let live: Option<bool> = sqlx::query_scalar(
         "SELECT password_authenticated_at > clock_timestamp() - interval '5 minutes' \

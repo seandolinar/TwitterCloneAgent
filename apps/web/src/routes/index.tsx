@@ -1,13 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { sessionOptions } from '../lib/session'
+import { accountReady } from '../lib/api'
 import { Composer, Timeline } from '../components/social'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
   const { data: session } = useSuspenseQuery(sessionOptions)
-  if (session?.verified) return <main className="page social-page">
+  if (accountReady(session)) return <main className="page social-page">
     <h1>Home feed</h1>
     <p>Your posts and the people you follow, newest first.</p>
     <Composer />

@@ -154,6 +154,7 @@ pub struct Social {
     pool: PgPool,
     limiter: RateLimiter,
     write_rule: Rule,
+    pub(crate) email_enabled: bool,
 }
 
 const PROFILE_SELECT: &str = "SELECT account.id, account.handle, account.display_name, account.biography, \
@@ -174,7 +175,13 @@ impl Social {
             limiter: RateLimiter::new(pool.clone(), rate_secret).map_err(SocialError::RateLimit)?,
             pool,
             write_rule: Rule::new(writes_per_minute, 60).map_err(SocialError::RateLimit)?,
+            email_enabled: true,
         })
+    }
+
+    pub fn with_email_enabled(mut self, enabled: bool) -> Self {
+        self.email_enabled = enabled;
+        self
     }
 
     pub async fn profile(
@@ -233,7 +240,8 @@ impl Social {
                 .map_err(|_| SocialError::Unavailable)?;
         match verified {
             Some(true) => Ok(()),
-            Some(false) => Err(SocialError::VerificationRequired),
+            Some(false) if self.email_enabled => Err(SocialError::VerificationRequired),
+            Some(false) => Ok(()),
             None => Err(SocialError::Forbidden),
         }
     }

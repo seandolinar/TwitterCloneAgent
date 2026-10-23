@@ -60,6 +60,9 @@ pub struct EmailDelivery {
 
 impl EmailDelivery {
     pub fn new(pool: PgPool, config: &Config) -> Result<Self, AccountError> {
+        if !config.email_enabled {
+            return Err(AccountError::EmailDisabled);
+        }
         let smtp = &config.smtp;
         let mut builder = if smtp.tls {
             AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp.host)
@@ -190,6 +193,9 @@ impl EmailDelivery {
 
 impl Accounts {
     pub async fn request_verification(&self, user_id: Uuid) -> Result<(), AccountError> {
+        if !self.email_enabled {
+            return Err(AccountError::EmailDisabled);
+        }
         sqlx::query(
             "INSERT INTO delivery_jobs (id, kind, user_id) \
              SELECT $1, 'verification_email', id FROM users WHERE id = $2 AND verified_at IS NULL",
@@ -203,6 +209,9 @@ impl Accounts {
     }
 
     pub async fn request_password_reset(&self, email: &str) -> Result<(), AccountError> {
+        if !self.email_enabled {
+            return Err(AccountError::EmailDisabled);
+        }
         let email = normalize_email(email)?;
         sqlx::query(
             "INSERT INTO delivery_jobs (id, kind, user_id) \
@@ -217,6 +226,9 @@ impl Accounts {
     }
 
     pub async fn verify_email(&self, token: &str) -> Result<(), AccountError> {
+        if !self.email_enabled {
+            return Err(AccountError::EmailDisabled);
+        }
         let digest = tokens::digest(token).ok_or(AccountError::InvalidToken)?;
         let mut tx = self
             .pool

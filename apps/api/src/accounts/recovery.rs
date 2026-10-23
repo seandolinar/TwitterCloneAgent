@@ -7,6 +7,9 @@ impl Accounts {
     /// No SMTP/provider request belongs in this transaction: provider cleanup is
     /// durable, while local revocation is authoritative immediately after commit.
     pub async fn reset_password(&self, token: &str, password: &str) -> Result<(), AccountError> {
+        if !self.email_enabled {
+            return Err(AccountError::EmailDisabled);
+        }
         let digest = tokens::digest(token).ok_or(AccountError::InvalidToken)?;
         // Bound hashing outside the transaction so locks do not wait on CPU work.
         let hash = self.passwords.hash(password).await?;

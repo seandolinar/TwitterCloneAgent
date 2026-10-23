@@ -4,6 +4,11 @@ export interface Session {
   handle: string
   verified: boolean
   recentPasswordAuth: boolean
+  emailEnabled?: boolean
+}
+
+export function accountReady(session: Session | null | undefined): session is Session {
+  return !!session && (session.verified || session.emailEnabled === false)
 }
 
 export interface Profile {

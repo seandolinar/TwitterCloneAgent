@@ -28,6 +28,7 @@ pub enum AccountError {
     HandleTaken,
     InvalidCredentials,
     InvalidToken,
+    EmailDisabled,
     Unavailable,
 }
 
@@ -40,6 +41,7 @@ impl fmt::Display for AccountError {
             Self::HandleTaken => "That handle is already taken.",
             Self::InvalidCredentials => "Email or password is incorrect.",
             Self::InvalidToken => "This link is invalid or has expired.",
+            Self::EmailDisabled => "Email verification and password recovery are disabled.",
             Self::Unavailable => "The service is temporarily unavailable.",
         })
     }
@@ -80,6 +82,11 @@ impl IntoResponse for AccountError {
                 "invalid_token",
                 "This link is invalid or has expired.",
             ),
+            Self::EmailDisabled => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "email_disabled",
+                "Email verification and password recovery are disabled.",
+            ),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "service_unavailable",
@@ -115,6 +122,7 @@ struct LoginRow {
 pub struct Accounts {
     pub(crate) pool: PgPool,
     passwords: Passwords,
+    email_enabled: bool,
 }
 
 impl Accounts {
@@ -122,7 +130,13 @@ impl Accounts {
         Ok(Self {
             pool,
             passwords: Passwords::new().await?,
+            email_enabled: true,
         })
+    }
+
+    pub fn with_email_enabled(mut self, enabled: bool) -> Self {
+        self.email_enabled = enabled;
+        self
     }
 
     /// Return the same acknowledgement for a new account and an existing email.
@@ -165,7 +179,7 @@ impl Accounts {
                 return Err(AccountError::Unavailable);
             }
         };
-        if let Some(user_id) = inserted {
+        if let Some(user_id) = inserted.filter(|_| self.email_enabled) {
             jobs::enqueue(&mut tx, &Intent::VerificationEmail { user_id })
                 .await
                 .map_err(|_| AccountError::Unavailable)?;

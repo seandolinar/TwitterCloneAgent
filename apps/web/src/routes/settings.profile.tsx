@@ -4,14 +4,14 @@ import { AccountForm, useAccount } from '../components/account-form'
 import { ReadFailure } from '../components/social'
 import { profileOptions, socialKey } from '../lib/social'
 import { sessionOptions } from '../lib/session'
-import { ApiFailure } from '../lib/api'
+import { ApiFailure, accountReady } from '../lib/api'
 
 export const Route = createFileRoute('/settings/profile')({ component: ProfileEditor })
 
 function ProfileEditor() {
   const { data: session } = useSuspenseQuery(sessionOptions)
   if (!session) return <main className="page"><h1>Edit profile</h1><Link to="/login">Log in to edit your profile</Link></main>
-  if (!session.verified) return <main className="page"><h1>Edit profile</h1><Link to="/verify-email">Verify email before editing your profile</Link></main>
+  if (!accountReady(session)) return <main className="page"><h1>Edit profile</h1><Link to="/verify-email">Verify email before editing your profile</Link></main>
   return <Editor handle={session.handle} />
 }
 

@@ -1,0 +1,39 @@
+import { test, expect } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import { call, fixturePassword } from './helpers'
+
+test('email-disabled signup can log in and post immediately without recovery or verification', async ({ page }) => {
+  const settings = await page.request.get(process.env.WEB_BASE_URL + '/api/auth/settings')
+  test.skip((await settings.json()).emailEnabled !== false, 'This scenario requires EMAIL_ENABLED=false.')
+  const handle = 'noemail_' + randomUUID().replaceAll('-', '').slice(0, 12)
+  const password = fixturePassword()
+  await page.goto('/register')
+  await expect(page.getByText('Create an account, then log in to start posting. Email verification is not required.', { exact: true })).toBeVisible()
+  await page.getByLabel('Email', { exact: true }).fill(handle + '@example.test')
+  await page.getByLabel('Handle', { exact: true }).fill(handle)
+  await page.getByLabel('Password', { exact: true }).fill(password)
+  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('your account is ready')
+  await page.getByRole('link', { name: 'Log in', exact: true }).first().click()
+  await expect(page.getByRole('link', { name: 'Forgot your password?', exact: true })).toHaveCount(0)
+  await page.getByLabel('Email', { exact: true }).fill(handle + '@example.test')
+  await page.getByLabel('Password', { exact: true }).fill(password)
+  await page.getByRole('button', { name: 'Log in', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Home feed', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Verify email', exact: true })).toHaveCount(0)
+  const session = await call(page, 'GET', '/api/auth/session')
+  expect(session.data.verified).toBe(false)
+  expect(session.data.emailEnabled).toBe(false)
+  await page.getByLabel('Post text', { exact: true }).fill('Posting without email verification')
+  await page.getByRole('button', { name: 'Publish post', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Post published.' })).toBeVisible()
+  await page.goto('/settings/keys')
+  await expect(page.getByRole('heading', { name: 'API keys', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Verify email before managing keys', exact: true })).toHaveCount(0)
+  for (const path of ['/forgot-password', '/reset-password']) {
+    await page.goto(path)
+    await expect(page.getByRole('heading', { name: 'Password recovery unavailable' })).toBeVisible()
+  }
+  await page.goto('/verify-email')
+  await expect(page.getByRole('heading', { name: 'Email verification is not required' })).toBeVisible()
+})

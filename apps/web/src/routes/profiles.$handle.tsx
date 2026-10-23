@@ -4,6 +4,7 @@ import { PlainText } from '../components/plain-text'
 import { FollowControl, ReadFailure, Timeline } from '../components/social'
 import { profileOptions } from '../lib/social'
 import { sessionOptions } from '../lib/session'
+import { accountReady } from '../lib/api'
 
 export const Route = createFileRoute('/profiles/$handle')({
   loader: ({ context, params }) => context.queryClient.prefetchQuery(profileOptions(context.api, params.handle)),
@@ -26,7 +27,7 @@ function ProfilePage() {
     <p>Joined <time dateTime={person.joinedAt}>{person.joinedAt.slice(0, 10)}</time></p>
     <p>{person.followerCount} followers · {person.followingCount} following · {person.postCount} posts</p>
     <FollowControl profile={person} />
-    {session?.verified && session.id === person.id && <p><Link to="/settings/profile">Edit profile</Link></p>}
+    {accountReady(session) && session.id === person.id && <p><Link to="/settings/profile">Edit profile</Link></p>}
     {!session && <p><Link to="/login">Log in to follow and like</Link></p>}
     <h2>Posts</h2>
     <Timeline key={person.id} path={`/api/v1/profiles/${person.handle}/posts`} label="Profile posts" />

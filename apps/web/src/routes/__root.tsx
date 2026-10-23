@@ -11,6 +11,7 @@ import type { ReactNode } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import type { createQueryState } from '../lib/query-state'
 import { sessionOptions } from '../lib/session'
+import { accountReady } from '../lib/api'
 import { PlainText } from '../components/plain-text'
 import stylesheet from '../styles.css?url'
 
@@ -47,14 +48,14 @@ function RootLayout() {
         {session ? <>
           <Link to="/profiles/$handle" params={{ handle: session.handle }}>Your profile</Link>
           <Link to="/settings/keys">API keys</Link>
-          {!session.verified && <Link to="/verify-email">Verify email</Link>}
+          {!accountReady(session) && <Link to="/verify-email">Verify email</Link>}
           <Link to="/logout">Log out</Link>
         </> : <>
           <Link to="/register">Create account</Link>
           <Link to="/login">Log in</Link>
         </>}
       </nav>
-      <p className="session-status"><PlainText text={session ? `Signed in as @${session.handle}${session.verified ? '' : ' — email verification required'}` : 'Signed out'} /></p>
+      <p className="session-status"><PlainText text={session ? `Signed in as @${session.handle}${accountReady(session) ? '' : ' — email verification required'}` : 'Signed out'} /></p>
     </header>
     <Outlet />
   </>

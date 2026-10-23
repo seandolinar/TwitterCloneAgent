@@ -19,6 +19,7 @@ pub struct Config {
     pub rate_limit_secret: String,
     pub auth_limits: AuthLimits,
     pub social_writes_per_minute: u32,
+    pub email_enabled: bool,
     pub smtp: SmtpConfig,
     pub unkey: Option<UnkeyConfig>,
 }
@@ -182,64 +183,77 @@ impl Config {
             reauthentication_ip: positive_limit(values, "AUTH_REAUTH_IP_LIMIT", 50)?,
         };
         let social_writes_per_minute = positive_limit(values, "SOCIAL_WRITES_PER_MINUTE", 30)?;
-        let smtp = SmtpConfig {
-            from_address: match get("EMAIL_FROM") {
-                Some(value) => value,
-                None if production => {
-                    return Err(ConfigError("EMAIL_FROM is required in production"));
-                }
-                None => "noreply@example.test".into(),
-            },
-            host: get("SMTP_HOST").unwrap_or_else(|| "mail".into()),
-            port: get("SMTP_PORT")
-                .unwrap_or_else(|| "1025".into())
-                .parse()
-                .ok()
-                .filter(|port| *port != 0)
-                .ok_or(ConfigError("SMTP_PORT must be a nonzero port number"))?,
-            tls: boolean(values, "SMTP_TLS", false)?,
-            username: get("SMTP_USERNAME"),
-            password: get("SMTP_PASSWORD"),
+        let email_enabled = boolean(values, "EMAIL_ENABLED", true)?;
+        let smtp = if !email_enabled {
+            SmtpConfig {
+                from_address: "noreply@example.test".into(),
+                host: "mail".into(),
+                port: 1025,
+                tls: false,
+                username: None,
+                password: None,
+            }
+        } else {
+            let smtp = SmtpConfig {
+                from_address: match get("EMAIL_FROM") {
+                    Some(value) => value,
+                    None if production => {
+                        return Err(ConfigError("EMAIL_FROM is required in production"));
+                    }
+                    None => "noreply@example.test".into(),
+                },
+                host: get("SMTP_HOST").unwrap_or_else(|| "mail".into()),
+                port: get("SMTP_PORT")
+                    .unwrap_or_else(|| "1025".into())
+                    .parse()
+                    .ok()
+                    .filter(|port| *port != 0)
+                    .ok_or(ConfigError("SMTP_PORT must be a nonzero port number"))?,
+                tls: boolean(values, "SMTP_TLS", false)?,
+                username: get("SMTP_USERNAME"),
+                password: get("SMTP_PASSWORD"),
+            };
+            let sender = smtp
+                .from_address
+                .parse::<email_address::EmailAddress>()
+                .map_err(|_| ConfigError("EMAIL_FROM must be a single email address"))?;
+            if !sender.display_part().is_empty() {
+                return Err(ConfigError("EMAIL_FROM must be a single email address"));
+            }
+            let sender_domain = sender.domain().to_ascii_lowercase();
+            if production && (sender_domain.ends_with(".test") || sender_domain == "localhost") {
+                return Err(ConfigError(
+                    "Production EMAIL_FROM must not use a development domain",
+                ));
+            }
+            if smtp.username.is_some() != smtp.password.is_some() {
+                return Err(ConfigError(
+                    "SMTP_USERNAME and SMTP_PASSWORD must be supplied together",
+                ));
+            }
+            if production
+                && (!smtp.tls
+                    || local_host(&smtp.host)
+                    || smtp.host.chars().any(char::is_whitespace)
+                    || matches!(
+                        smtp.host.to_lowercase().as_str(),
+                        "mail" | "mailpit" | "localhost" | "127.0.0.1" | "::1"
+                    )
+                    || smtp
+                        .username
+                        .as_ref()
+                        .is_none_or(|value| value.trim().is_empty())
+                    || smtp
+                        .password
+                        .as_ref()
+                        .is_none_or(|value| value.trim().is_empty()))
+            {
+                return Err(ConfigError(
+                    "Production requires external SMTP with TLS and authentication",
+                ));
+            }
+            smtp
         };
-        let sender = smtp
-            .from_address
-            .parse::<email_address::EmailAddress>()
-            .map_err(|_| ConfigError("EMAIL_FROM must be a single email address"))?;
-        if !sender.display_part().is_empty() {
-            return Err(ConfigError("EMAIL_FROM must be a single email address"));
-        }
-        let sender_domain = sender.domain().to_ascii_lowercase();
-        if production && (sender_domain.ends_with(".test") || sender_domain == "localhost") {
-            return Err(ConfigError(
-                "Production EMAIL_FROM must not use a development domain",
-            ));
-        }
-        if smtp.username.is_some() != smtp.password.is_some() {
-            return Err(ConfigError(
-                "SMTP_USERNAME and SMTP_PASSWORD must be supplied together",
-            ));
-        }
-        if production
-            && (!smtp.tls
-                || local_host(&smtp.host)
-                || smtp.host.chars().any(char::is_whitespace)
-                || matches!(
-                    smtp.host.to_lowercase().as_str(),
-                    "mail" | "mailpit" | "localhost" | "127.0.0.1" | "::1"
-                )
-                || smtp
-                    .username
-                    .as_ref()
-                    .is_none_or(|value| value.trim().is_empty())
-                || smtp
-                    .password
-                    .as_ref()
-                    .is_none_or(|value| value.trim().is_empty()))
-        {
-            return Err(ConfigError(
-                "Production requires external SMTP with TLS and authentication",
-            ));
-        }
         let unkey = match (
             get("UNKEY_MANAGEMENT_ROOT_KEY"),
             get("UNKEY_API_ID"),
@@ -317,6 +331,7 @@ impl Config {
             rate_limit_secret,
             auth_limits,
             social_writes_per_minute,
+            email_enabled,
             smtp,
             unkey,
         })
@@ -664,5 +679,29 @@ mod tests {
         assert_eq!(first.rate_limit_secret, values["RATE_LIMIT_SECRET"]);
         assert_eq!(first.csrf_secret, second.csrf_secret);
         assert_eq!(first.rate_limit_secret, second.rate_limit_secret);
+    }
+
+    #[test]
+    fn email_is_optional_in_production_without_weakening_other_security_settings() {
+        let mut values = production();
+        for key in [
+            "EMAIL_FROM",
+            "SMTP_HOST",
+            "SMTP_PORT",
+            "SMTP_TLS",
+            "SMTP_USERNAME",
+            "SMTP_PASSWORD",
+        ] {
+            values.remove(key);
+        }
+        assert!(Config::from_values(&values).is_err());
+        values.insert("EMAIL_ENABLED".into(), "false".into());
+        assert!(!Config::from_values(&values).unwrap().email_enabled);
+        values.insert("COOKIE_SECURE".into(), "false".into());
+        reject(&values, "HTTPS");
+        values.insert("COOKIE_SECURE".into(), "true".into());
+        values.insert("EMAIL_ENABLED".into(), "not-a-boolean".into());
+        reject(&values, "Boolean");
+        assert!(Config::from_values(&development()).unwrap().email_enabled);
     }
 }

@@ -1,10 +1,17 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { AccountForm, Field, useAccount } from '../components/account-form'
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { accountSettingsOptions } from '../lib/session'
 
 export const Route = createFileRoute('/forgot-password')({ component: ForgotPassword })
 
 function ForgotPassword() {
   const { api } = useAccount()
+  const { data: settings } = useSuspenseQuery(accountSettingsOptions)
+  if (settings.emailEnabled === false) return <main className="page account-page">
+    <h1>Password recovery unavailable</h1><p>Email password recovery is disabled for this app.</p>
+    <p><Link to="/login">Return to login</Link></p>
+  </main>
   return <main className="page account-page">
     <h1>Reset your password</h1>
     <AccountForm label="Send reset link" success="If the address can receive account recovery email, a reset link has been queued."

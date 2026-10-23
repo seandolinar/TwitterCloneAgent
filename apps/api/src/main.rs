@@ -44,9 +44,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config.rate_limit_secret,
         config.social_writes_per_minute,
     )
-    .map_err(|_| "Social service configuration is invalid")?;
+    .map_err(|_| "Social service configuration is invalid")?
+    .with_email_enabled(config.email_enabled);
     let maintenance = tokio::spawn(maintenance::run(pool.clone()));
-    let delivery = tokio::spawn(EmailDelivery::new(pool.clone(), &config)?.run());
+    let delivery = if config.email_enabled {
+        Some(tokio::spawn(
+            EmailDelivery::new(pool.clone(), &config)?.run(),
+        ))
+    } else {
+        None
+    };
     let cleanup = tokio::spawn(auth.keys.clone().run());
     let servers = tokio::try_join!(
         axum::serve(
@@ -66,10 +73,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_graceful_shutdown(shutdown()),
     );
     maintenance.abort();
-    delivery.abort();
+    if let Some(delivery) = &delivery {
+        delivery.abort();
+    }
     cleanup.abort();
     let _ = maintenance.await;
-    let _ = delivery.await;
+    if let Some(delivery) = delivery {
+        let _ = delivery.await;
+    }
     let _ = cleanup.await;
     pool.close().await;
     servers?;

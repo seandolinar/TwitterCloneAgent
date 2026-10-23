@@ -1,5 +1,13 @@
 # Browser entry point
 
+`GET /api/auth/settings` exposes only `{ "emailEnabled": boolean }` for account
+screens. Session responses also include `emailEnabled`; `verified` continues to
+mean actual mailbox verification. In email-disabled mode the UI permits logged-in
+users to use social/key features, skips verification instructions, hides email
+recovery links, and explains unavailable recovery on direct recovery routes.
+The Rust services enforce the same policy. Settings/session query state stays
+request-scoped; passwords, sessions, CSRF, ownership and key scopes still apply.
+
 See [the browser walkthrough](ACCOUNT_GUIDE.md) for account onboarding/recovery,
 feeds, profiles, social actions, personal keys, and troubleshooting.
 Key creation requires the optional real Unkey integration; browser social use
@@ -121,7 +129,9 @@ screenshots, and video are disabled to avoid persisting passwords/link tokens.
 They also exercise account screens, real recovery mail, old-session rejection,
 320px keyboard forms, announced validation, pending state/password clearing, and
 production CSP with successful hydration and blocked untrusted markup scripts.
-Full-product acceptance and live-provider tests remain separate.
+The [final local validation evidence](../../docs/validation/twitter-mvp.md)
+records full browser-product acceptance separately from blocked live-provider
+tests.
 
 Social queries use the same request-scoped SSR read boundary. Infinite lists
 retain pages on next-page failure and deduplicate IDs. Mutations are
