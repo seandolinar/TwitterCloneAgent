@@ -188,7 +188,81 @@ async fn idle_and_absolute_expiration_are_server_enforced() {
             .unwrap()
             .is_none()
     );
+    let active = accounts
+        .login("fixture@example.test", PASSWORD, None)
+        .await
+        .unwrap();
+    let maintenance = tokio::spawn(twitter_clone_api::maintenance::run(pool.clone()));
+    let cleanup = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            if count == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    maintenance.abort();
+    let _ = maintenance.await;
+    cleanup.expect("maintenance must remove only expired sessions");
+    assert!(
+        accounts
+            .resolve_session(active.token.expose_secret())
+            .await
+            .unwrap()
+            .is_some()
+    );
     pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn idle_renewal_preserves_absolute_expiry_and_storage_outage_fails_closed() {
+    let (pool, accounts) = setup().await;
+    let grant = accounts
+        .login("fixture@example.test", PASSWORD, None)
+        .await
+        .unwrap();
+    let before: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT expires_at FROM sessions WHERE token_digest = $1")
+            .bind(grant.token.digest())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "UPDATE sessions SET created_at = now() - interval '2 hours', \
+         last_used_at = now() - interval '1 hour' WHERE token_digest = $1",
+    )
+    .bind(grant.token.digest())
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        accounts
+            .resolve_session(grant.token.expose_secret())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let (after, renewed): (chrono::DateTime<chrono::Utc>, bool) = sqlx::query_as(
+        "SELECT expires_at, last_used_at > now() - interval '5 seconds' \
+         FROM sessions WHERE token_digest = $1",
+    )
+    .bind(grant.token.digest())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(before, after);
+    assert!(renewed);
+    pool.close().await;
+    assert!(matches!(
+        accounts.resolve_session(grant.token.expose_secret()).await,
+        Err(AccountError::Unavailable),
+    ));
 }
 
 #[tokio::test]

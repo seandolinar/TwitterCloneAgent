@@ -187,8 +187,8 @@ formatting. Public identities contain only user ID, handle, and verification
 status, not the email or hash.
 
 These are backend primitives, **not exposed account HTTP endpoints yet**.
-Sessions, CSRF, and endpoint throttles are wired by subsequent tasks before
-browser onboarding is available.
+CSRF and endpoint throttles are wired by subsequent tasks before browser
+onboarding is available.
 
 ```sh
 python3 tests/with_postgres.py cargo test \
@@ -225,3 +225,40 @@ revocation remains a separate pending recovery task.
 python3 tests/with_postgres.py cargo test \
   --manifest-path apps/api/Cargo.toml --test email -- --ignored
 ```
+
+## Opaque browser sessions
+
+Successful login creates a fresh 256-bit token and persists only its digest.
+If a previous browser token is supplied, successful login revokes it in the same
+transaction; failed credentials leave it unchanged. Credential checking and
+issuance lock the account so password recovery cannot race an old-password login
+into creating a session after recovery revokes sessions.
+
+Each authenticated lookup checks revocation, seven-day absolute expiry, and
+24-hour inactivity against PostgreSQL's clock. Activity renews only the idle
+timestamp, never absolute expiry. Missing/invalid/expired tokens do not establish
+identity; storage errors fail closed rather than becoming anonymous access.
+Logout is idempotent and server-revokes the token; the HTTP adapter also clears
+its cookie using the same name/path attributes.
+
+Production uses `__Host-session` with HttpOnly, Secure, SameSite=Lax, path `/`,
+and no Domain. Explicit loopback HTTP development uses
+`twitterclone_dev_session` without Secure. Raw session grants have no diagnostic
+or serialization implementation; public session identity contains no raw token
+or digest. CSRF binding can use the private session digest without exposing it.
+
+Login counts as recent password authentication. Reauthentication checks the
+current password and live session under the account lock, then refreshes the
+five-minute window; a stale/revoked session cannot be revived by cached context.
+The shared maintenance loop prunes bounded batches of expired/revoked/idle
+sessions and consumed/expired account tokens, preserving active records.
+
+```sh
+python3 tests/with_postgres.py cargo test \
+  --manifest-path apps/api/Cargo.toml --test sessions -- --ignored
+```
+
+The tests cover rotation, failed-login preservation, logout/revocation,
+idle/absolute expiry, idle renewal without absolute extension, reauthentication,
+cookie attributes/removal, maintenance, and unavailable storage. The account
+HTTP endpoints are still pending CSRF/throttle wiring.
