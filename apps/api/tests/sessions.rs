@@ -1,0 +1,231 @@
+use cookie::{Cookie, SameSite};
+use sqlx::PgPool;
+use std::collections::HashMap;
+use twitter_clone_api::{
+    accounts::{AccountError, Accounts, clear_session_cookie, session_cookie_name},
+    config::Config,
+    database::MIGRATOR,
+    tokens::BearerToken,
+};
+
+mod support;
+
+const PASSWORD: &str = "isolated session fixture password";
+
+async fn setup() -> (PgPool, Accounts) {
+    let pool = support::fresh_pool().await;
+    MIGRATOR.run(&pool).await.unwrap();
+    let accounts = Accounts::new(pool.clone()).await.unwrap();
+    accounts
+        .register("fixture@example.test", "fixture", PASSWORD)
+        .await
+        .unwrap();
+    (pool, accounts)
+}
+
+fn config(production: bool) -> Config {
+    let mut values = HashMap::from([
+        (
+            "DATABASE_URL".into(),
+            std::env::var("DATABASE_URL").unwrap(),
+        ),
+        ("CSRF_SECRET".into(), std::env::var("CSRF_SECRET").unwrap()),
+        (
+            "RATE_LIMIT_SECRET".into(),
+            std::env::var("RATE_LIMIT_SECRET").unwrap(),
+        ),
+    ]);
+    if production {
+        for (key, value) in [
+            ("APP_ENV", "production"),
+            ("APP_ORIGIN", "https://social.example.com"),
+            ("EMAIL_FROM", "noreply@example.com"),
+            ("SMTP_HOST", "smtp.example.com"),
+            ("SMTP_PORT", "587"),
+            ("SMTP_TLS", "true"),
+            ("SMTP_USERNAME", "test-fixture"),
+            ("SMTP_PASSWORD", "test-fixture-not-a-real-credential"),
+        ] {
+            values.insert(key.into(), value.into());
+        }
+    }
+    Config::from_values(&values).unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn login_rotates_tokens_logout_revokes_and_cookie_policy_is_explicit() {
+    let (pool, accounts) = setup().await;
+    let first = accounts
+        .login("fixture@example.test", PASSWORD, None)
+        .await
+        .unwrap();
+    assert!(
+        accounts
+            .resolve_session(first.token.expose_secret())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(matches!(
+        accounts
+            .login(
+                "fixture@example.test",
+                "wrong long fixture password",
+                Some(first.token.expose_secret())
+            )
+            .await,
+        Err(AccountError::InvalidCredentials),
+    ));
+    assert!(
+        accounts
+            .resolve_session(first.token.expose_secret())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let second = accounts
+        .login(
+            "fixture@example.test",
+            PASSWORD,
+            Some(first.token.expose_secret()),
+        )
+        .await
+        .unwrap();
+    assert!(first.token.expose_secret() != second.token.expose_secret());
+    assert!(
+        accounts
+            .resolve_session(first.token.expose_secret())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        accounts
+            .resolve_session(second.token.expose_secret())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    for production in [false, true] {
+        let config = config(production);
+        let header = second.cookie(&config);
+        let cookie = Cookie::parse(header).unwrap();
+        assert_eq!(cookie.name(), session_cookie_name(&config));
+        assert!(cookie.value() == second.token.expose_secret());
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.secure().unwrap_or(false), production);
+        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+        assert_eq!(cookie.path(), Some("/"));
+        assert!(cookie.domain().is_none());
+        assert_eq!(cookie.max_age().unwrap().whole_seconds(), 7 * 24 * 60 * 60);
+        let removal = Cookie::parse(clear_session_cookie(&config)).unwrap();
+        assert_eq!(removal.name(), cookie.name());
+        assert_eq!(removal.path(), Some("/"));
+        assert_eq!(removal.max_age().unwrap().whole_seconds(), 0);
+    }
+    let raw = second.token.expose_secret();
+    accounts.logout(raw).await.unwrap();
+    accounts.logout(raw).await.unwrap();
+    assert!(accounts.resolve_session(raw).await.unwrap().is_none());
+    assert!(
+        accounts
+            .resolve_session("not-a-token")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let unknown = BearerToken::generate().unwrap();
+    assert!(
+        accounts
+            .resolve_session(unknown.expose_secret())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn idle_and_absolute_expiration_are_server_enforced() {
+    let (pool, accounts) = setup().await;
+    let idle = accounts
+        .login("fixture@example.test", PASSWORD, None)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE sessions SET created_at = now() - interval '2 days', \
+         last_used_at = now() - interval '25 hours' WHERE token_digest = $1",
+    )
+    .bind(idle.token.digest())
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        accounts
+            .resolve_session(idle.token.expose_secret())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let absolute = accounts
+        .login("fixture@example.test", PASSWORD, None)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE sessions SET created_at = now() - interval '8 days', \
+         expires_at = now() - interval '1 day' WHERE token_digest = $1",
+    )
+    .bind(absolute.token.digest())
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        accounts
+            .resolve_session(absolute.token.expose_secret())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn reauthentication_requires_live_session_and_current_password() {
+    let (pool, accounts) = setup().await;
+    let grant = accounts
+        .login("fixture@example.test", PASSWORD, None)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE sessions SET password_authenticated_at = now() - interval '6 minutes' WHERE token_digest = $1",
+    ).bind(grant.token.digest()).execute(&pool).await.unwrap();
+    let session = accounts
+        .resolve_session(grant.token.expose_secret())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!session.recent_password_auth);
+    assert_eq!(
+        accounts
+            .reauthenticate(&session, "wrong long fixture password")
+            .await,
+        Err(AccountError::InvalidCredentials)
+    );
+    accounts.reauthenticate(&session, PASSWORD).await.unwrap();
+    let current = accounts
+        .resolve_session(grant.token.expose_secret())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(current.recent_password_auth);
+    assert!(current.binding() == grant.token.digest());
+    accounts.logout(grant.token.expose_secret()).await.unwrap();
+    assert_eq!(
+        accounts.reauthenticate(&current, PASSWORD).await,
+        Err(AccountError::InvalidCredentials)
+    );
+    pool.close().await;
+}

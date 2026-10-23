@@ -1,0 +1,14 @@
+# Only source and locked build inputs may enter the build context.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!vite.config.ts
+!src/
+!src/**
+
+# Never include local credentials, even beneath an allowed directory.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key

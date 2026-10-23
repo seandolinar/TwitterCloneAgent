@@ -2,9 +2,11 @@
 
 ## Context
 
-See `proposal.md` for motivation and the five delta specs for behavior. Inspection found only the OpenSpec setup and README: no source, tests, database, package manifests, or existing capability specs. All application paths below are proposed additions, not descriptions of existing code.
+See `proposal.md` for motivation and the five delta specs for behavior. The project began without application code; Rust/TanStack scaffolds, local containers, configuration validation, and database migrations/readiness are now implemented. The task checkboxes are the source of truth for implementation progress; descriptions below include both existing foundations and pending work.
 
 The user confirmed TanStack Start, the elementary social scope, email/password authentication with verification and recovery, Rust/Axum, PostgreSQL, and Docker. Unkey documentation distinguishes API Management from its Compute gateway. Frontline has a documented Docker `local-dev` mode that verifies real keys against hosted Unkey. Its `X-Unkey-Principal` header is unsigned and is trustworthy only behind a protected gateway ingress.
+
+The approved production target is one Unkey Compute app containing both frontend and Rust processes. Compute does not offer private app-to-app networking, so separate frontend/backend Compute apps would require public service authentication. The earlier separate-thread Compute discussion was a draft, not applied work; this change now records the approved decision without resetting completed tasks.
 
 ## Goals / Non-Goals
 
@@ -12,6 +14,7 @@ The user confirmed TanStack Start, the elementary social scope, email/password a
 - Keep business rules and account authorization in one Rust application, reused by browser and integration adapters.
 - Make the browser product runnable without cloud credentials while offering a real, opt-in Unkey gateway integration.
 - Make ownership, session revocation, key revocation, and proxy trust explicit and testable.
+- Deliver a combined production image and versioned Compute configuration/runbook without provisioning or deploying resources.
 
 **Non-Goals:**
 - Microservices, Redis, a message broker, a separately implemented authentication service, or a local replica of Unkey's control plane.
@@ -24,7 +27,7 @@ The user confirmed TanStack Start, the elementary social scope, email/password a
 
 Use Axum/Tokio for HTTP, SQLx for parameterized PostgreSQL queries and migrations, Serde for DTOs, `reqwest` for Unkey HTTPS calls, and maintained RustCrypto/email libraries. Pin compatible versions and commit `Cargo.lock`. Organize `apps/api/` into configuration, HTTP adapters, account/social services, persistence, and external integrations without creating independent services for each.
 
-Run two internal listeners in the same process: browser traffic on port 8080 and gateway traffic on port 8081. Browser routes accept cookie identity only; third-party `/v1` routes accept trusted gateway identity only. Both produce an explicit authenticated actor and call the same service functions. Service functions perform ownership checks rather than relying on hidden UI controls.
+Run two internal listeners in the same Rust process. Local Compose uses browser port 8080 and gateway port 8081 on private networks. The combined Compute image binds both Rust listeners to loopback on distinct ports, separate from the platform's `PORT`; only the frontend ingress listens externally. Browser routes accept cookie identity only; third-party `/v1` routes accept trusted gateway identity only. Both produce an explicit authenticated actor and call the same service functions. Service functions perform ownership checks rather than relying on hidden UI controls.
 
 **Alternative:** implement authentication and social logic in both TanStack server functions and Rust. Rejected because it creates two authorization authorities. Actix Web is also viable, but Axum's Tower/Tokio middleware ecosystem fits this small async API without a separate execution model.
 
@@ -34,7 +37,7 @@ Use React/TypeScript, TanStack Start server routes, TanStack Router, and TanStac
 
 - Browser `/api/auth/*` maps to the private backend's `/browser/auth/*`.
 - Browser `/api/v1/*` maps to `/browser/v1/*` for social operations.
-- Only known method/path combinations are forwarded to a fixed backend URL. Normalize and reject encoded traversal; never proxy arbitrary URLs or `/v1` through this entry point.
+- Only known method/path combinations are forwarded to fixed backend URLs. Normalize and reject encoded traversal; never proxy arbitrary URLs. The standard local browser entry point rejects `/v1`; the explicitly configured Compute ingress has a separate gateway-only `/v1` forwarding branch described below.
 - Strip inbound `Authorization` and `X-Unkey-*` headers, and replace untrusted forwarding headers. Relay cookies, the actual original `Origin`, the CSRF header, and every `Set-Cookie` response separately. Derive client IP only from the runtime's peer information or explicitly trusted hosting ingress.
 - SSR loaders forward the current request's cookies for reads; never store request identity or query caches globally. Disable shared caching for personalized/auth/key-management responses.
 
@@ -74,6 +77,8 @@ Index author/creation-time/post-ID, following pairs, and reverse follower lookup
 - Submit verification/reset tokens via POST after the link opens a UI page, not a state-changing GET that mail scanners can consume. Use fixed configured application URLs, no arbitrary redirect destinations, no token-bearing analytics, `Referrer-Policy: no-referrer`, and no query/body logging on these routes.
 - Consume tokens and update account state transactionally. A successful reset changes the hash, consumes remaining reset tokens, revokes sessions, and marks all owner keys locally revoked while enqueueing provider cleanup in the same transaction.
 
+Both `CSRF_SECRET` and `RATE_LIMIT_SECRET` are mandatory in development and production. Require two distinct, nonblank values of at least 32 bytes, generated independently and supplied through private runtime configuration. Keep them stable across restarts and identical across backend instances; no known default or random per-process fallback is permitted. The local `.env` template contains empty placeholders, never generated secrets. Test harnesses generate independent disposable values only in memory.
+
 For email, persist an intent containing only user ID and purpose. A small backend worker generates the raw token in memory, saves its digest, and sends SMTP email; retries generate a replacement token and invalidate the previous token for that purpose. This avoids persisting plaintext token-bearing email bodies in an outbox. Retry jobs with backoff and bounded attempts; the user can request another message. An SMTP failure never changes the current password.
 
 Use the local mail catcher for development and TLS-authenticated SMTP in production. No provider-specific account is chosen.
@@ -103,9 +108,11 @@ Keep API Management issuance separate from gateway configuration:
 
 Use real Frontline in the opt-in `unkey` Compose profile, with a pinned image and TOML configuration matching the documented local-dev contract. It uses a separate verify-only root credential. The default browser stack needs neither root credential and returns a clear integration-unavailable state for key creation.
 
-**Trust boundary:** Frontline strips caller `X-Unkey-*` headers and supplies its own principal. Only Frontline reaches the gateway listener from outside the application's private networks; neither backend listener has a host port. The frontend is a trusted service but must not forward raw caller identities or proxy the gateway listener. Configure distinct browser/gateway/data networks and explicit proxy allowlists, and test header spoofing and path-encoding bypasses. The unsigned principal is not safe on an Internet-accessible origin.
+**Local trust boundary:** Frontline strips caller `X-Unkey-*` headers and supplies its own principal. Only Frontline reaches the gateway listener from outside the application's private networks; neither backend listener has a host port. The local browser-only frontend must not forward raw caller identities or proxy the gateway listener. Configure distinct browser/gateway/data networks and explicit proxy allowlists, and test header spoofing and path-encoding bypasses. The unsigned principal is not safe on an Internet-accessible origin.
 
-For a future production deployment, the recommended supported boundary is Rust behind Unkey Compute's native gateway, where the origin is reachable only through the gateway. The frontend remains a same-origin browser proxy; use disjoint path policies for cookie routes and `/v1`, with cookie authorization still enforced by Rust. Use private production PostgreSQL and external SMTP. Do not present a `local-dev` Frontline deployment as a production recipe or assume Unkey's managed gateway can front an arbitrary external origin.
+**Compute trust boundary:** Unkey's managed gateway is the only inbound path to one combined app. It strips caller `X-Unkey-*` headers and replaces forwarding headers before the request reaches the app's single ingress. Use disjoint gateway policies for `/v1` and `/v1/*`; browser, asset, and readiness paths do not require an integration key. In the explicit Compute runtime mode, the ingress forwards only known `/v1` operations and their gateway-supplied principal to the loopback integration listener. Cookie `/api/*` requests always go to the browser listener with principal/Bearer headers stripped and their original Origin/CSRF context preserved. Missing principal denies API access; neither branch falls back to the other's authentication.
+
+The Compute ingress may use the gateway-overwritten single-value `X-Forwarded-For` and `X-Forwarded-Proto` only in the protected Compute deployment. Replace any incoming application-private client-IP header when relaying that context to Rust. The ordinary local frontend uses its trusted peer context instead, never an arbitrary caller's forwarding headers. Do not infer gateway trust just from a header's presence, and do not expose a Compute-mode origin directly on the internet.
 
 **Alternative:** API Management verification inside Axum alone would provide keys, but would not satisfy the requested Unkey gateway. Self-hosting the complete Unkey control plane is disproportionate. Directly trusting principal headers on a public origin is insecure.
 
@@ -129,7 +136,7 @@ Use 201 for post/key creation, 204 for successful deletion/idempotent relationsh
 
 Generate OpenAPI from Rust request/response definitions and test permission coverage. Never include emails in public profile DTOs. User text length means Unicode code points, not bytes, UTF-16 units, grapheme clusters, or Twitter's weighted-URL algorithm; use equivalent counting on both sides.
 
-### 8. Container-first execution and evidence
+### 8. Local and Unkey Compute delivery
 
 Proposed additions include `apps/api/Dockerfile`, `apps/web/Dockerfile`, `compose.yaml`, `infra/unkey/gateway.toml`, `.env.example`, `.gitignore`, and `tests/`. Use multi-stage non-root application images, a pinned PostgreSQL major, a pinned local mail-catcher image, versioned migrations, and a named database volume. Do not bake environment files or secrets into build contexts.
 
@@ -137,13 +144,25 @@ Proposed additions include `apps/api/Dockerfile`, `apps/web/Dockerfile`, `compos
 
 Use Rust unit and PostgreSQL integration tests for validation, ownership, concurrent token consumption, idempotency, shared throttling, and recovery revocation. Use frontend component/type checks and Playwright against Compose for real browser-cookie/CSRF, email, social, and cache-isolation workflows. Provider client contract tests can use HTTP fixtures only inside tests, never an insecure application runtime mode. Separately run credentialed smoke tests through actual Frontline with development keys; never claim fixtures prove the live provider works.
 
-**Alternative:** host-only development would be faster to scaffold but would not validate the requested container workflow. Compose is the local delivery target; Kubernetes and automatic cloud deployment are not needed.
+Add a separate combined production image and entrypoint under `infra/compute/`, plus versioned gateway/runtime configuration and `docs/deployment/unkey-compute.md`. This does not replace the local application Dockerfiles or Compose workflow.
+
+- The non-root combined container runs TanStack Start and Rust. Start is the only gateway-facing ingress and binds the supplied `PORT` (8080 by default); Rust's two listeners bind loopback. Reject port collisions or non-loopback internal endpoints.
+- An init/supervision entrypoint runs the one-shot SQLx migration command before serving, forwards SIGTERM/SIGINT, and terminates the deployment if either long-running child fails. Concurrent instance startup relies on SQLx's migration locking, not an in-memory leader.
+- `/healthz` reports ingress liveness; `/readyz` checks the Rust process and expected database schema. Configure Compute's health check on `/readyz` without API-key authentication. Migration failure, a dead child, or an unavailable database must not produce readiness.
+- Production PostgreSQL is external to Compute, with authentication and certificate-verified TLS. Production SMTP is external and TLS-authenticated. No Compose database volume or mail catcher is included in the production image.
+- Inject all secrets at runtime. Production and preview have distinct databases/data, Unkey API/keyspace IDs and scoped credentials, application secrets, and exact browser origins. Replicas within one environment share stable application secrets and PostgreSQL state; they must not rely on inter-instance connectivity.
+- Supply an operator runbook for a GitHub/Dockerfile build (appropriate for private source) or an independently authorized image publication path. Explain `PORT`, resource sizing, health checks, secrets, `/v1` policies, migration failures, backup/restore, and schema-compatible rollback. Do not connect a repository, enable automatic deployment, publish an image, or create paid resources during implementation.
+- Locally test the combined image's process lifecycle, loopback routing, readiness, and header boundaries using isolated dependency fixtures. Keep fixture results distinct from a separately authorized live Compute/preview smoke test.
+
+**Alternative:** separate Compute apps cannot make private HTTP calls to each other today, so they would require another public service-authentication boundary. Combining processes couples frontend/backend release and scaling, accepted for this MVP. Kubernetes and automatic cloud deployment are unnecessary.
 
 ## Risks / Trade-offs
 
 - [Unkey credentials and connectivity are required for integration tests] → Keep browser development independent; label live tests separately and report when credentials are absent.
 - [Frontline's documented local image is a release candidate and its configuration can change] → Pin a verified image/config pair during implementation and exercise it end to end; do not use `latest` or production claims.
 - [Unsigned gateway identity depends on network and proxy correctness] → No published origin port, dedicated ingress, explicit route allowlists, header stripping, and bypass regression tests.
+- [Combined processes share deployment resources and failure fate] → Supervise both, propagate termination, test child failure, and size memory for SSR and bounded password hashing rather than assuming Compute's smallest default is sufficient.
+- [A production/preview configuration mistake could mix data or credentials] → Document and validate environment-specific origins, databases and keyspaces; never default preview to production resources.
 - [PostgreSQL-backed sessions, throttles, and jobs add database load] → Indexed bounded queries, expiring-record cleanup, bounded worker batches, and shared pool limits; optimize only with observed need.
 - [No moderation, reporting, account deletion UI, or MFA] → Limit initial access to a controlled MVP; a public launch requires a separate abuse/privacy/security review.
 - [Email jobs can deliver an older link before a retry supersedes it] → Make token errors recoverable and resend available; only the newest token for a purpose remains active.
@@ -153,7 +172,7 @@ Use Rust unit and PostgreSQL integration tests for validation, ownership, concur
 
 There is no existing application data to migrate. During implementation, add an initial versioned schema and validate startup from an empty volume and an already initialized volume. Do not modify the main OpenSpec specs until the change is implemented and explicitly synced/archived.
 
-Deliver local images and operational documentation, not a live deployment. Before any production use, select hosting, configure HTTPS and trusted ingress, inject secrets, supply production SMTP, configure Unkey policies, and test database backup/restore. These are operator prerequisites and require separate authorization for any provisioning or publication.
+Deliver local images, a combined Compute image, versioned deployment configuration, and an operator runbook, not a live deployment. Before production use, configure the Compute environment and gateway policies, HTTPS origin/domain, resource limits, external TLS PostgreSQL, secrets, and SMTP, then test backup/restore. Production and preview must remain separate. Connecting a source repository, publishing artifacts, provisioning services, and deploying require separate authorization.
 
 For rollback, stop the affected release and restore the prior application image only when schema-compatible; otherwise restore a verified database backup. Do not drop tables or delete the named volume as part of ordinary restart or rollback. Document that `docker compose down -v` destroys local data without running it automatically.
 
@@ -167,3 +186,5 @@ Design-time sources; verify pinned versions during implementation:
 - Unkey gateway local development: https://www.unkey.com/docs/compute/gateway/local-development
 - Unkey gateway API-key policy: https://www.unkey.com/docs/compute/gateway/api-key-auth
 - Unkey principal and its trust boundary: https://www.unkey.com/docs/compute/gateway/principal
+- Unkey app-to-app networking limitations: https://www.unkey.com/docs/compute/networking/private-networking
+- Unkey ingress and overwritten headers: https://www.unkey.com/docs/compute/networking/request-lifecycle

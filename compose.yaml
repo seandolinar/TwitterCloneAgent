@@ -1,0 +1,129 @@
+services:
+  web:
+    image: twitterclone-web:local
+    build:
+      context: ./apps/web
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      API_BASE_URL: http://api:8080
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    networks:
+      - browser
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz', {signal: AbortSignal.timeout(2000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    image: twitterclone-api:local
+    build: &api-build
+      context: ./apps/api
+    environment: &api-environment
+      APP_ENV: ${APP_ENV:-development}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      BROWSER_BIND: 0.0.0.0:8080
+      GATEWAY_BIND: 0.0.0.0:8081
+      DATABASE_URL: postgresql://twitterclone:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env to a generated URL-safe password}@db:5432/twitterclone
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CSRF_SECRET: ${CSRF_SECRET:?Set CSRF_SECRET in .env to an independently generated secret}
+      RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?Set RATE_LIMIT_SECRET in .env to an independently generated secret}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-mail}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_TLS: ${SMTP_TLS:-false}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      UNKEY_MANAGEMENT_ROOT_KEY: ${UNKEY_MANAGEMENT_ROOT_KEY:-}
+      UNKEY_API_ID: ${UNKEY_API_ID:-}
+      UNKEY_KEYSPACE_ID: ${UNKEY_KEYSPACE_ID:-}
+    networks:
+      - browser
+      - gateway
+      - data
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      mail:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "twitter-clone-api", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    image: twitterclone-api:local
+    build: *api-build
+    command: ["migrate"]
+    environment: *api-environment
+    networks:
+      - data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: twitterclone
+      POSTGRES_DB: twitterclone
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env to a generated URL-safe password}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twitterclone -d twitterclone"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  mail:
+    image: axllent/mailpit:v1.32.0
+    ports:
+      - "127.0.0.1:${MAIL_UI_PORT:-8025}:8025"
+    networks:
+      - browser
+      - data
+
+networks:
+  browser:
+  gateway:
+  data:
+    internal: true
+
+volumes:
+  postgres-data:

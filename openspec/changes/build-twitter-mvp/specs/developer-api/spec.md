@@ -56,6 +56,14 @@ The public third-party entry point MUST use Unkey's gateway to validate Bearer A
 - **WHEN** a caller supplies an `X-Unkey-Principal` header directly or through the browser proxy
 - **THEN** the supplied identity cannot impersonate a user or bypass the gateway
 
+### Requirement: Preserve distinct authentication at the Compute ingress
+The combined Compute ingress SHALL forward only gateway-authenticated `/v1` operations to the loopback integration interface. Gateway API-key policies MUST cover `/v1` and its routes without gating browser or health routes. Browser requests MUST retain cookie/Origin/CSRF checks, with integration identity headers removed. The authentication modes MUST NOT substitute for each other.
+
+#### Scenario: Route browser and integration traffic through one ingress
+- **WHEN** a browser calls an account route and an integration calls a permitted `/v1` route
+- **THEN** the browser request is authorized only by its browser security context and the integration request only by its verified key principal
+- **AND** missing keys, forged principals, or encoded path attempts cannot switch authentication branches
+
 ### Requirement: Enforce permissions and bounded usage
 Every third-party operation MUST enforce its documented permission and resource ownership. The gateway SHALL enforce a configurable per-key request limit, and social writes SHALL have a shared per-user limit across browser and API access. Missing permission MUST return 403 and exhausted limits MUST return 429 with a retry indication.
 

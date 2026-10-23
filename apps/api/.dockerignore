@@ -1,0 +1,15 @@
+# Only source and locked build inputs may enter the build context.
+**
+!Cargo.toml
+!Cargo.lock
+!build.rs
+!src/
+!src/**
+!migrations/
+!migrations/**
+
+# Never include local credentials, even beneath an allowed directory.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key

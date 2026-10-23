@@ -1,25 +1,25 @@
 # Tasks
 
-All tasks are pending implementation. Follow `design.md` and the five capability specs; do not add deferred social features or deploy/provision services as part of this checklist. Use isolated test databases/Compose project names so tests never reset a developer's persistent volume.
+Checked tasks are implemented; unchecked tasks remain pending. Follow `design.md` and the five capability specs. This checklist is authoritative for the consolidated work in this thread: preserve completed tasks rather than importing an older draft's checkbox state. Do not add deferred social features or deploy/provision services. Use isolated test databases/Compose project names so tests never reset a developer's persistent volume.
 
 ## 1. Application and container foundation
 
-- [ ] 1.1 Scaffold `apps/api/` with Axum/Tokio and `apps/web/` with TanStack Start/React/TypeScript; pin compatible toolchains/dependencies and commit lockfiles. Verify `cargo check --manifest-path apps/api/Cargo.toml` and `npm --prefix apps/web run typecheck`.
-- [ ] 1.2 Add validated runtime configuration, private browser/gateway listeners, safe request IDs/error responses, body/time/concurrency bounds, and liveness endpoints. Verify configuration tests reject unsafe production settings and health requests contain no sensitive configuration.
-- [ ] 1.3 Add multi-stage non-root application Dockerfiles, `.dockerignore` files, default Compose web/API/PostgreSQL/mail services, private networks, and a named database volume. Verify `docker compose config` and local application image builds without real secrets.
-- [ ] 1.4 Add `.env.example`, secret/build-output ignore rules, and initial README setup commands. Verify the documented default startup requires no Unkey credentials and no host Rust or Node installation; inspect application image users and published ports.
+- [x] 1.1 Scaffold `apps/api/` with Axum/Tokio and `apps/web/` with TanStack Start/React/TypeScript; pin compatible toolchains/dependencies and commit lockfiles. Verify `cargo check --manifest-path apps/api/Cargo.toml` and `npm --prefix apps/web run typecheck`.
+- [x] 1.2 Add validated runtime configuration, private browser/gateway listeners, safe request IDs/error responses, body/time/concurrency bounds, and liveness endpoints. Verify configuration tests reject unsafe production settings and health requests contain no sensitive configuration.
+- [x] 1.3 Add multi-stage non-root application Dockerfiles, `.dockerignore` files, default Compose web/API/PostgreSQL/mail services, private networks, and a named database volume. Verify `docker compose config` and local application image builds without real secrets.
+- [x] 1.4 Add `.env.example`, secret/build-output ignore rules, and initial README setup commands. Verify the documented default startup requires no Unkey credentials and no host Rust or Node installation; inspect application image users and published ports.
 
 ## 2. Persistence and shared security infrastructure
 
-- [ ] 2.1 Create versioned migrations for users, sessions, purpose-bound account tokens, posts, follows, likes, key metadata, rate-limit buckets, and delivery jobs, with the design's constraints/indexes. Verify migrations against a fresh isolated PostgreSQL database and rerun without destructive changes.
-- [ ] 2.2 Add the one-shot migration command and database/schema readiness checks, wired into Compose startup. Verify backend readiness fails for an unavailable database or failed migration and succeeds only after schema initialization.
-- [ ] 2.3 Implement atomic shared throttling, private identifier hashing, and expiration cleanup. Verify concurrent clients using separate backend instances share limits, receive 429/`Retry-After`, and cannot bypass limits when storage fails.
-- [ ] 2.4 Implement bounded durable job claiming/retry for email intents and provider cleanup without persisting raw credentials. Verify crash/retry and concurrent-worker tests; document migration, throttle defaults, and job-recovery behavior alongside the implementation.
+- [x] 2.1 Create versioned migrations for users, sessions, purpose-bound account tokens, posts, follows, likes, key metadata, rate-limit buckets, and delivery jobs, with the design's constraints/indexes. Verify migrations against a fresh isolated PostgreSQL database and rerun without destructive changes.
+- [x] 2.2 Add the one-shot migration command and database/schema readiness checks, wired into Compose startup. Verify backend readiness fails for an unavailable database or failed migration and succeeds only after schema initialization.
+- [x] 2.3 Implement atomic shared throttling, private identifier hashing, and expiration cleanup. Verify concurrent clients using separate backend instances share limits, receive 429/`Retry-After`, and cannot bypass limits when storage fails.
+- [x] 2.4 Implement bounded durable job claiming/retry for email intents and provider cleanup without persisting raw credentials. Verify crash/retry and concurrent-worker tests; document migration, throttle defaults, and job-recovery behavior alongside the implementation.
 
 ## 3. Account authentication and recovery
 
-- [ ] 3.1 Implement normalized registration and uniqueness, the 15–128-code-point password policy, bounded Argon2id hashing, and uniform credential-failure behavior. Verify unit/integration tests for duplicate email/handle, invalid passwords, preserved password whitespace, and unknown-email login handling.
-- [ ] 3.2 Implement email verification/resend and SMTP delivery with in-memory raw token generation and stored digests. Verify successful, expired, reused, wrong-purpose, concurrent-consumption, and failed-delivery cases, including a message delivered to the Compose mail catcher.
+- [x] 3.1 Implement normalized registration and uniqueness, the 15–128-code-point password policy, bounded Argon2id hashing, and uniform credential-failure behavior. Verify unit/integration tests for duplicate email/handle, invalid passwords, preserved password whitespace, and unknown-email login handling.
+- [x] 3.2 Implement email verification/resend and SMTP delivery with in-memory raw token generation and stored digests. Verify successful, expired, reused, wrong-purpose, concurrent-consumption, and failed-delivery cases, including a message delivered to the Compose mail catcher.
 - [ ] 3.3 Implement opaque sessions, login rotation, logout, idle/absolute expiry, and recent password reauthentication. Verify old/revoked/expired tokens fail and production/development cookie attributes match the spec.
 - [ ] 3.4 Implement CSRF bootstrap/token checks, exact-origin validation, verification restrictions, and auth endpoint throttles. Verify login-CSRF, missing-origin/token, hostile-origin, forged-identity, and unverified-user mutation attempts fail without side effects.
 - [ ] 3.5 Implement password-reset request/consumption and atomic password replacement, session invalidation, local key revocation, and provider-cleanup enqueueing. Verify generic acknowledgements, reset races, expired/replayed tokens, and rejection of old sessions/keys immediately after commit.
@@ -35,7 +35,7 @@ All tasks are pending implementation. Follow `design.md` and the five capability
 
 ## 5. Browser security boundary and account UI
 
-- [ ] 5.1 Implement the TanStack Start fixed-origin, method/path-allowlisted proxy, request-scoped SSR data access, separate `Set-Cookie` forwarding, and sanitized identity/forwarding headers. Verify proxy tests block `/v1`, encoded traversal, arbitrary destinations, spoofed principals, and spoofed client IPs.
+- [ ] 5.1 Implement the TanStack Start fixed-origin, method/path-allowlisted browser proxy, request-scoped SSR data access, separate `Set-Cookie` forwarding, and sanitized identity/forwarding headers. Verify the standard local browser entry blocks `/v1`, encoded traversal, arbitrary destinations, spoofed principals, and spoofed client IPs; the Compute gateway branch is tracked separately in 8.2.
 - [ ] 5.2 Add typed API access and request-scoped query/session state with no shared personalized cache, plus CSRF-token bootstrap/refresh. Verify two-user SSR/cache-isolation tests and browser tests preserve cookies and reject cross-origin mutations.
 - [ ] 5.3 Build registration/login/logout, verification/resend, and forgotten/reset-password screens with safe generic acknowledgements. Verify Playwright can register, retrieve local email, verify, log in, reset, and observe invalidated old sessions.
 - [ ] 5.4 Add responsive navigation, accessible form primitives, security headers, private-response cache controls, and safe plain-text rendering. Verify component tests, keyboard/mobile checks, hostile-text rendering, and no persistent password/session/API-key storage.
@@ -57,13 +57,22 @@ All tasks are pending implementation. Follow `design.md` and the five capability
 - [ ] 7.3 Build personal key settings with read-only defaults, permission/expiry controls, recent-password flow, transient one-time copy view, and revocation status. Verify UI tests show integration-unavailable states without credentials and never recover a full key after dismissal/navigation.
 - [ ] 7.4 Finish keyboard/mobile interaction and screen-reader labels for social and key screens, and document a browser/API usage walkthrough. Verify accessible primary actions and that the walkthrough's examples match the published contract.
 
-## 8. End-to-end acceptance and delivery evidence
+## 8. Unkey Compute delivery
 
-- [ ] 8.1 Run Rust formatting/lint/unit/PostgreSQL integration checks and frontend type/component/production-build checks using documented scripts. Verify all capability scenarios have automated coverage or an explicit recorded manual check; report real commands and failures.
-- [ ] 8.2 Run the exact default `docker compose up --build` workflow in an isolated project, then the Playwright acceptance suite against the resulting stack. Verify onboarding/recovery, cross-user ownership, social operations, proxy spoofing resistance, and session/cache isolation.
-- [ ] 8.3 With user-supplied development credentials, run the exact `docker compose --profile unkey up --build` workflow and live smoke tests through real Frontline. Verify missing/invalid/wrong-keyspace/expired keys, permission denial, successful social automation, 429 behavior, and local immediate revocation. If credentials are absent, report this check as blocked, not passed.
-- [ ] 8.4 Verify a normal container restart preserves accounts/posts/relationships/revocations, migrations are repeatable, database failure removes readiness, and inspected application images/assets contain no real secrets. Record the evidence without deleting persistent development volumes.
-- [ ] 8.5 Review the final operational notes for HTTPS, production SMTP, private origin/gateway configuration, backups/restore, schema-compatible rollback, local-only services, and controlled-MVP limitations. Verify documentation does not claim production deployment or live-provider validation that was not performed.
+- [ ] 8.1 Add the combined non-root production image and supervised entrypoint for TanStack Start and Rust, with one-shot migrations before serving. Verify local image builds, SIGTERM propagation, child-failure termination, migration failure, and no development database/mail service or embedded secrets.
+- [ ] 8.2 Add the explicit Compute-mode single ingress: browser routes proxy to the loopback cookie interface and allowlisted `/v1` operations to the loopback gateway interface. Verify route normalization, principal/header preservation only on the integration branch, stripped browser identity headers, and no cross-mode authentication fallback.
+- [ ] 8.3 Validate production `PORT`, loopback bindings, exact HTTPS origin, certificate-verified PostgreSQL TLS, external authenticated SMTP, and required environment-specific secrets. Verify invalid/partial configurations fail safely and readiness covers both processes and schema without exposing configuration.
+- [ ] 8.4 Add versioned Compute runtime/gateway configuration for the combined image, `/readyz` health checks, and `/v1`-only key authentication/rate limits. Verify configuration against the current provider contract and tests that browser/health routes remain outside key-auth policy while every integration route is covered.
+- [ ] 8.5 Write `docs/deployment/unkey-compute.md` covering private-source Dockerfile builds or separately authorized image publication, runtime secret injection, external PostgreSQL/SMTP, production/preview isolation, migrations, resource sizing, backups, and schema-compatible rollback. Verify the runbook and examples match delivered configuration; do not provision, upload source, publish images, or deploy.
+- [ ] 8.6 Add local combined-topology smoke/security tests using isolated dependency fixtures, and a separately authorized live Compute smoke-test checklist. Verify single-port ingress, private Rust interfaces, path/header bypass rejection, failure readiness, and production/preview isolation assertions; report fixture validation separately from any live deployment evidence.
+
+## 9. End-to-end acceptance and delivery evidence
+
+- [ ] 9.1 Run Rust formatting/lint/unit/PostgreSQL integration checks and frontend type/component/production-build checks using documented scripts. Verify all capability scenarios have automated coverage or an explicit recorded manual check; report real commands and failures.
+- [ ] 9.2 Run the exact default `docker compose up --build` workflow in an isolated project, then the Playwright acceptance suite against the resulting stack. Verify onboarding/recovery, cross-user ownership, social operations, proxy spoofing resistance, and session/cache isolation.
+- [ ] 9.3 With user-supplied development credentials, run the exact `docker compose --profile unkey up --build` workflow and live smoke tests through real Frontline. Verify missing/invalid/wrong-keyspace/expired keys, permission denial, successful social automation, 429 behavior, and local immediate revocation. If credentials are absent, report this check as blocked, not passed.
+- [ ] 9.4 Verify a normal container restart preserves accounts/posts/relationships/revocations, migrations are repeatable, database failure removes readiness, and inspected application images/assets contain no real secrets. Record the evidence without deleting persistent development volumes.
+- [ ] 9.5 Review the final operational notes and both local/combined-image evidence, including the live Compute checklist if separately authorized. Verify documentation does not claim production deployment, environment isolation, or live-provider checks that were not performed.
 
 ## Workflow follow-up
 

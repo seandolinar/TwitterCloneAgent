@@ -25,7 +25,7 @@ The system SHALL provide `docker compose --profile unkey up --build` for Unkey F
 - **THEN** the integration reports a clear setup or dependency failure and never falls back to authorizing requests
 
 ### Requirement: Preserve private service ingress
-The backend and database MUST NOT publish host ports in the standard Compose setup. Only the browser entry point, local mail UI, and optional third-party gateway SHALL publish loopback ports. The browser entry point MUST NOT forward third-party routes, and caller-supplied gateway identity headers MUST be removed before browser-origin traffic reaches the backend.
+The backend and database MUST NOT publish host ports in the standard Compose setup. Only the browser entry point, local mail UI, and optional third-party gateway SHALL publish loopback ports. The local browser-only entry point MUST NOT forward third-party routes, and caller-supplied gateway identity headers MUST be removed before browser-origin traffic reaches the backend.
 
 #### Scenario: Attempt direct backend access
 - **WHEN** a caller outside the Compose networks tries to reach the backend or database through a host port
@@ -55,9 +55,33 @@ The system SHALL persist PostgreSQL data in a named volume and apply versioned m
 - **THEN** the application is not marked ready and does not accept partially initialized writes
 
 ### Requirement: Document the production boundary
-The project SHALL document configuration, container commands, migrations, backups, TLS requirements, SMTP setup, and Unkey gateway operation. It MUST explicitly identify Frontline local-development mode and the mail catcher as non-production conveniences and describe a supported production gateway trust boundary without claiming that local Compose alone is production-ready.
+The project SHALL provide an Unkey Compute deployment runbook covering configuration, migrations, backups, TLS, SMTP, gateway policies, and rollback. It MUST identify Frontline local-development mode and the mail catcher as local-only conveniences. Actual provisioning, publication, and deployment MUST require separate authorization.
 
 #### Scenario: Prepare a production deployment
 - **WHEN** an operator follows the deployment notes
 - **THEN** the notes identify the remaining hosting, HTTPS, database backup, SMTP, and Unkey configuration work
 - **AND** no step requires committing secrets, publicly publishing private source/images, or enabling a development authentication bypass
+
+### Requirement: Deliver a combined Unkey Compute application
+The system SHALL provide a non-root production image running the frontend and Rust in one Unkey Compute app. Only one ingress SHALL listen on the platform's `PORT`; both Rust interfaces MUST bind loopback. The production image MUST exclude the development database and mail catcher.
+
+#### Scenario: Run the production image
+- **WHEN** the combined image starts with a valid production configuration and platform port
+- **THEN** browser and integration requests use the same gateway-facing ingress
+- **AND** callers cannot connect directly to either Rust interface to bypass ingress controls
+
+### Requirement: Supervise production processes and schema readiness
+The production entrypoint MUST apply versioned migrations before accepting traffic, supervise both application processes, and propagate shutdown signals. Readiness MUST fail for an unavailable database, incompatible schema, or failed child process. Production database connections MUST use authenticated, certificate-verified TLS.
+
+#### Scenario: Startup or runtime dependency failure
+- **WHEN** a migration fails, a required process exits, or the database becomes unavailable
+- **THEN** the deployment does not report ready or accept partially initialized writes
+- **AND** a failed child causes the combined deployment to terminate rather than silently serve half an application
+
+### Requirement: Isolate production and preview environments
+Production and preview MUST use separate PostgreSQL databases/data, Unkey keyspaces and scoped credentials, application secrets, and exact browser origins. Secrets MUST be injected at runtime. Replicas within one environment MUST share that environment's stable security configuration and durable state.
+
+#### Scenario: Exercise a preview deployment
+- **WHEN** a preview environment is configured and exercised
+- **THEN** its reads, writes, email delivery, and API keys do not use production data or credentials
+- **AND** the runbook identifies the isolation checks without embedding secret values
