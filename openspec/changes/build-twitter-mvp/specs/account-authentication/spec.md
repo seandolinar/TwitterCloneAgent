@@ -6,6 +6,26 @@ Let people establish and recover an account without exposing credentials, and pr
 
 ## ADDED Requirements
 
+### Requirement: Support the email-free MVP
+The system SHALL support `EMAIL_ENABLED=false` in development and production.
+In this mode email/password login SHALL work without mailbox verification;
+registration SHALL NOT enqueue email, the SMTP worker SHALL NOT run, and email
+verification/resend/password-reset request/consumption SHALL return 503 with
+`email_disabled`. Existing verification timestamps SHALL remain unchanged.
+New and existing accounts SHALL retain password/session/CSRF/throttling checks.
+Omitting the setting defaults to true, restoring email behavior described below.
+All mailbox-verification requirements below are conditional on enabled email.
+
+#### Scenario: Register and use an account without email setup
+- **WHEN** email is disabled and a person registers and logs in with valid credentials
+- **THEN** they can use social and key features immediately without a verification email
+- **AND** their email is not recorded as verified and no email intent is created
+
+#### Scenario: Disable and re-enable email for existing accounts
+- **WHEN** email is disabled for an existing unverified account
+- **THEN** its existing session can use protected features without changing verification timestamps
+- **AND** re-enabling email restores the verification requirement and recovery behavior
+
 ### Requirement: Register an account
 The system SHALL accept an email address, unique case-insensitive handle, and password; enforce case-insensitive email uniqueness; and create an unverified account. Passwords MUST contain 15–128 Unicode code points, MUST NOT be silently trimmed or truncated, and MUST be stored only as salted, adaptive password hashes.
 

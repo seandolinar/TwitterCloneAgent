@@ -6,6 +6,18 @@ Provide a usable browser experience for elementary social interactions, account 
 
 ## ADDED Requirements
 
+### Requirement: Adapt to disabled email
+The client SHALL read the server's public `emailEnabled` setting and allow
+authenticated unverified accounts to use social/key screens when false. Signup
+SHALL direct the person to login without an inbox step. Verification prompts and
+email recovery links SHALL be hidden; direct verification/recovery routes SHALL
+explain the disabled feature. The email workflows below apply when email is enabled.
+
+#### Scenario: Complete email-free onboarding
+- **WHEN** a visitor registers and logs in with email disabled
+- **THEN** the home feed/composer and account controls are available immediately
+- **AND** signup does not claim a message was sent and recovery pages explain that email recovery is unavailable
+
 ### Requirement: Complete account workflows in the browser
 The web client SHALL provide registration, login, logout, verification, verification resend, forgotten-password, and reset-password screens. It MUST explain unverified-account restrictions and recoverable errors without exposing whether a private email address is registered.
 

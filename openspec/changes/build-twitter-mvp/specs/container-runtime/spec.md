@@ -6,6 +6,22 @@ Make the product reproducible to run and validate in containers while preserving
 
 ## ADDED Requirements
 
+Email policy amendment: the MVP templates select `EMAIL_ENABLED=false`; when
+disabled no SMTP credentials, sender domain or outbound mail service is required,
+including in production/Compute. Email-specific startup, delivery and SMTP
+requirements below apply when enabled. Local Mailpit may remain running for
+optional future use. Other production requirements, including HTTPS origin,
+verified database TLS, private ingress and runtime secrets, remain mandatory.
+
+### Requirement: Run without an email provider
+The runtime SHALL accept a production configuration with `EMAIL_ENABLED=false`
+and absent SMTP settings while enforcing all other security configuration.
+
+#### Scenario: Start the email-free production configuration
+- **WHEN** a valid production configuration disables email and omits SMTP credentials
+- **THEN** startup succeeds without constructing an email transport
+- **AND** disabling email cannot allow insecure cookies, database TLS or missing application secrets
+
 ### Requirement: Start the local browser product with Compose
 After copying the documented non-secret environment template, `docker compose up --build` SHALL start the frontend, backend, PostgreSQL, local mail catcher, and required schema initialization without host Rust or Node installations. The browser product MUST work without Unkey credentials; unavailable key-management features MUST clearly report that integration setup is required rather than issuing fake keys.
 

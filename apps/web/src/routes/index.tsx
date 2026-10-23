@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { sessionOptions } from '../lib/session'
+import { sessionOptions, accountSettingsOptions } from '../lib/session'
 import { accountReady } from '../lib/api'
 import { Composer, Timeline } from '../components/social'
 
@@ -8,6 +8,7 @@ export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
   const { data: session } = useSuspenseQuery(sessionOptions)
+  const { data: settings } = useSuspenseQuery(accountSettingsOptions)
   if (accountReady(session)) return <main className="page social-page">
     <h1>Home feed</h1>
     <p>Your posts and the people you follow, newest first.</p>
@@ -24,7 +25,7 @@ function Home() {
       <section className="notice" aria-labelledby="status-heading">
         <h2 id="status-heading">The foundation is in place.</h2>
         <p>
-          Read public profiles and posts, or verify your account to join the conversation.
+          {settings.emailEnabled === false ? 'Read public profiles and posts, or log in to join the conversation.' : 'Read public profiles and posts, or verify your account to join the conversation.'}
         </p>
         {session ? <p><Link to="/verify-email">Verify email to use your feed and publish posts</Link></p>
           : <p><Link to="/register">Create an account</Link> · <Link to="/login">Log in</Link></p>}

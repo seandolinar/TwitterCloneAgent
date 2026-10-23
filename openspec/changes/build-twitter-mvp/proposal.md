@@ -1,5 +1,16 @@
 # Proposal
 
+## Approved MVP email amendment (2026-10-23)
+
+The user requested an MVP without email verification or sender-domain/provider
+setup. Add `EMAIL_ENABLED=false` as an explicit runtime option in local and
+Compute environments. The MVP environment templates select it; omitted settings
+retain the previous email-enabled behavior. In disabled mode authenticated
+accounts can use social/key features without mailbox verification, no email is
+sent/queued, and email verification/recovery endpoints are unavailable. Preserve
+actual verification records and all other authentication/authorization checks.
+The original email capabilities below remain available when explicitly enabled.
+
 ## Why
 
 The project has no application yet. Build an elementary Twitter-style product that people can use in a browser or through user-owned API keys, with a Rust backend, secure account authentication, and a reproducible Docker development environment.

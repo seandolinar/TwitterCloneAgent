@@ -16,9 +16,14 @@ from test_foundation import ROOT, environment, free_port
 
 def main():
     command = sys.argv[1:]
+    email_disabled = bool(command and command[0] == "--email-disabled")
+    if email_disabled:
+        command = command[1:]
     if not command:
-        raise SystemExit("Usage: python3 tests/with_compose.py <command> [arguments...]")
+        raise SystemExit("Usage: python3 tests/with_compose.py [--email-disabled] <command> [arguments...]")
     env = environment()
+    if email_disabled:
+        env["EMAIL_ENABLED"] = "false"
     for key in list(env):
         if key.startswith("AUTH_") or key == "SOCIAL_WRITES_PER_MINUTE":
             env.pop(key)

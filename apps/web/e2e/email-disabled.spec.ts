@@ -15,6 +15,7 @@ test('email-disabled signup can log in and post immediately without recovery or 
   await page.getByRole('button', { name: 'Create account', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('your account is ready')
   await page.getByRole('link', { name: 'Log in', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: 'Log in', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Forgot your password?', exact: true })).toHaveCount(0)
   await page.getByLabel('Email', { exact: true }).fill(handle + '@example.test')
   await page.getByLabel('Password', { exact: true }).fill(password)

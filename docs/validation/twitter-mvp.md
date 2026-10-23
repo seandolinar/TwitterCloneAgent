@@ -2,6 +2,68 @@
 
 Validation date: 2026-10-23. Change: `build-twitter-mvp`.
 
+## Email-free MVP amendment validation
+
+The user corrected the requirement to disable email verification and avoid a
+sender-domain/email-provider setup. Implemented `EMAIL_ENABLED=false` in local
+and Compute configuration, leaving true as the compatibility default if omitted.
+The running local private `.env` now selects false; its other credentials and
+database volume are preserved. No schema migration or fabricated verification
+timestamp is used. Existing unverified sessions work while disabled; re-enabling
+restores verification checks. Email recovery is unavailable in disabled mode.
+
+Validation for this amendment:
+
+- `python3 tests/check_rust.py`: check, formatting, all-target Clippy, 42 unit
+  tests and 57 PostgreSQL/HTTP tests passed. New tests cover production without
+  SMTP, email-disabled registration and zero queued mail, truthful session
+  verification, blocked email/reset consumption, social/feed/reauth/key access,
+  provider-fixture issuance, gateway authentication, and restored verification
+  gates for the same account. Original enabled-mode tests remain passing.
+- `npm --prefix apps/web test`: all 12 unit/component tests passed.
+- `npm --prefix apps/web run typecheck`: passed with the new UI and tests.
+- `npm --prefix apps/web run test:proxy`: final production build and both
+  built-runtime ingress tests passed.
+- `python3 tests/test_foundation.py --live --acceptance`: isolated enabled-mode
+  SMTP/onboarding/recovery/security/social acceptance passed all eight existing
+  Chromium tests; the new disabled-mode scenario correctly skipped itself.
+- `python3 tests/with_compose.py --email-disabled npm --prefix apps/web run
+  test:e2e -- e2e/email-disabled.spec.ts`: real isolated email-disabled signup,
+  login and posting passed, including no verification prompt, unverified stored
+  status, key-screen access, and direct disabled recovery/verification screens.
+  Test stacks stopped their own containers/networks and preserved named volumes.
+- Rebuilt/recreated the user's existing local stack with
+  `docker compose --profile unkey up --build --detach --wait --wait-timeout 120`.
+  No existing user database was reset and no real provider keys were issued for
+  this amendment. Live Unkey task 9.3 remains partially tested as recorded below.
+
+Final running-stack checks returned 200 for `/readyz`, `/api/auth/settings` and
+`/register`; the settings response was exactly `{ "emailEnabled": false }` and
+signup rendered its no-verification instructions. A count-only database check
+confirmed three local no-email test accounts, zero marked as verified and zero
+queued email intents for them. All 61 current spec scenarios have report entries.
+
+The first Rust run exposed an outdated session-field-count contract assertion;
+it was updated to check the added public `emailEnabled` field. A new test also
+incorrectly expected 200 instead of the existing 204 reauthentication contract;
+the assertion was corrected. The first disabled browser test filled the outgoing
+registration form before client navigation finished; waiting for the login
+heading fixed that race. The passing rerun used a fresh isolated stack. Public
+settings observers are retained across account changes, while personalized
+queries are still purged; this prevents unnecessary suspense during login.
+
+New scenario coverage:
+
+| Scenario | Automated coverage |
+| --- | --- |
+| Register and use an account without email setup | `apps/api/tests/browser_social.rs`, `apps/api/src/keys/tests.rs`, `apps/web/e2e/email-disabled.spec.ts` |
+| Disable and re-enable email for existing accounts | `apps/api/tests/browser_social.rs`, `apps/api/src/keys/tests.rs`: same account/session, unchanged stored verification |
+| Complete email-free onboarding | `apps/web/e2e/email-disabled.spec.ts`: actual browser registration/login/posting and unavailable recovery |
+| Start the email-free production configuration | `apps/api/src/config.rs::tests::email_is_optional_in_production_without_weakening_other_security_settings` |
+
+The sections below are earlier validation checkpoints. Their email-enabled
+requirements and scenario counts describe the original mode, before this amendment.
+
 ## Credentialed local follow-up
 
 After the user supplied development configuration, ran

@@ -90,6 +90,18 @@ and any actual hosting deployment remain operator work.
 
 ## Validation
 
+The isolated default account suite enables email explicitly. To exercise the
+email-free MVP instead, run:
+
+```sh
+PLAYWRIGHT_BROWSERS_PATH="$PWD/apps/web/node_modules/.cache/ms-playwright" \
+  python3 tests/with_compose.py --email-disabled \
+  npm --prefix apps/web run test:e2e -- e2e/email-disabled.spec.ts
+```
+
+The email-disabled scenario skips itself when email is enabled. It checks real
+registration/login/posting, truthful verification status and unavailable recovery.
+
 With the repository's pinned Node version:
 
 ```sh

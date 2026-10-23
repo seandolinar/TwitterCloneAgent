@@ -3,7 +3,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 import { createServerApi } from './browser-proxy.server'
 import { decodeResponse, type Session } from './api'
-import { sessionKey } from './query-state'
+import { sessionKey, accountSettingsKey } from './query-state'
 
 const readSession = createServerFn({ method: 'GET' }).handler(async (): Promise<Session | null> => {
   setResponseHeader('Cache-Control', 'private, no-store')
@@ -27,7 +27,7 @@ const readAccountSettings = createServerFn({ method: 'GET' }).handler(async () =
 })
 
 export const accountSettingsOptions = queryOptions({
-  queryKey: ['account-settings'],
+  queryKey: accountSettingsKey,
   queryFn: () => readAccountSettings(),
   retry: false,
   staleTime: 10_000,

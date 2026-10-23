@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { createApiClient } from './api.ts'
 
 export const sessionKey = ['session'] as const
+export const accountSettingsKey = ['account-settings'] as const
 
 export function createQueryState(invalidateRoutes: () => Promise<void> = async () => {}) {
   const queryClient = new QueryClient({
@@ -17,9 +18,10 @@ export function createQueryState(invalidateRoutes: () => Promise<void> = async (
   })
   const api = createApiClient(undefined, async () => {
     await queryClient.cancelQueries()
-    // Keep the active session observer attached while purging other data.
-    // Removing its Query would leave mounted observers displaying old identity.
-    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== sessionKey[0] })
+    // Keep active session/settings observers attached while purging personalized
+    // data. Settings contain only the public feature flag, never account data.
+    queryClient.removeQueries({ predicate: (query) =>
+      query.queryKey[0] !== sessionKey[0] && query.queryKey[0] !== accountSettingsKey[0] })
     queryClient.getMutationCache().clear()
     queryClient.setQueryData(sessionKey, null)
     await queryClient.invalidateQueries({ queryKey: sessionKey, exact: true })

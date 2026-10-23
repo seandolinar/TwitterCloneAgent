@@ -74,12 +74,20 @@ Checked tasks are implemented; unchecked tasks remain pending. Follow `design.md
 - [x] 9.4 Verify a normal container restart preserves accounts/posts/relationships/revocations, migrations are repeatable, database failure removes readiness, and inspected application images/assets contain no real secrets. Record the evidence without deleting persistent development volumes.
 - [x] 9.5 Review the final operational notes and both local/combined-image evidence, including the live Compute checklist if separately authorized. Verify documentation does not claim production deployment, environment isolation, or live-provider checks that were not performed.
 
+## 10. User-requested email-free MVP amendment
+
+- [x] 10.1 Add a shared email-disabled runtime policy across registration, verification/recovery, browser sessions/reauthentication, social services, key management and gateway authorization. Preserve actual verification timestamps and other authorization checks; verify disabled-mode behavior, re-enablement and production configuration with isolated Rust/PostgreSQL tests.
+- [x] 10.2 Adapt account/social/key browser screens to email settings, including immediate signup/login, no verification prompts, and unavailable recovery screens. Verify type/build/runtime tests and real Chromium email-disabled signup/posting while retaining enabled-mode acceptance.
+- [x] 10.3 Enable the email-free mode in local/Compute templates and the private local environment, document its no-recovery limitation, reconcile capability specs, and rebuild/restart the current stack without deleting its database. Record actual validation results and existing-account behavior.
+
 ## Workflow follow-up
 
 - Present implementation and test evidence for review; do not publish images, provision paid services, merge a shared branch, or deploy without specific authorization.
 - Sync/archive this change only when the user requests that separate OpenSpec workflow.
 
 ## Current implementation evidence
+
+- User-requested email-free amendment (10.1–10.3) is implemented and enabled locally with `EMAIL_ENABLED=false`, also selected by local/Compute templates. Verification records are preserved; SMTP, verification and email recovery are optional while normal authentication/authorization remains. Final checks passed 42 Rust unit and 57 PostgreSQL/HTTP tests, typecheck, 12 frontend tests, production build/two ingress tests, eight enabled-mode Chromium tests and one isolated email-disabled onboarding/posting test. The existing local stack was rebuilt without resetting its database; readiness/settings/signup return 200, settings confirm email disabled, and all three local no-email test accounts remain unverified with zero queued email. All 61 current capability scenarios are mapped in the validation report. Task 9.3's remaining live-provider cases are unchanged.
 
 - Task 3.4 is implemented with private browser account routes, session-bound signed CSRF pairs, exact-origin validation, verified-user guards, and configurable shared authentication throttles.
 - Tasks 3.5 and 4.3 are now closed by request-level gateway tests: an unchanged cached principal fails on new reads/writes immediately after reset, and browser/gateway mutations consume one shared per-user budget. Transaction, expiry/replay, reset/issuance races, idempotency, ownership, and rollback tests remain in place. Local state assertions alone were not used to close these acceptance checks.

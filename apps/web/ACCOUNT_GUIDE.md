@@ -6,6 +6,17 @@ deployment remain separate from the delivered, locally tested combined image.
 
 ## Start the standard browser stack
 
+The MVP `.env.example` sets `EMAIL_ENABLED=false`. In that mode register, then
+log in with the same email/password to use the feed immediately; skip the email
+verification/recovery steps below. There is no email password recovery, so keep
+your password safe. Existing unverified accounts can also log in and use social
+and key features. No email-sending domain or SMTP provider is needed.
+
+To exercise the email walkthrough below, set `EMAIL_ENABLED=true` and run
+`docker compose --profile unkey up -d --build` (omit the profile for browser-only
+use). Local messages will then arrive in Mailpit. The automated legacy account
+suite explicitly enables this supported email mode in its isolated fixtures.
+
 Follow the root README: copy `.env.example` to a private `.env` if you have not
 already done so, and generate `POSTGRES_PASSWORD`, `CSRF_SECRET`, and
 `RATE_LIMIT_SECRET` independently. Never overwrite an existing private `.env`

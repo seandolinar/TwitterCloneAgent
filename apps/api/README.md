@@ -1,5 +1,22 @@
 # Rust API
 
+## Optional email
+
+Set `EMAIL_ENABLED=false` for the email-free MVP, including production. Register
+and log in with an email/password immediately; email is a login identifier, not
+verified ownership. Social actions, feeds, reauthentication and key management
+permit these accounts while retaining session, CSRF, password, owner and key-scope
+checks. No verification mail is queued and the SMTP worker is not started.
+Existing mail intents remain paused. SMTP settings are ignored in this mode.
+
+`GET /browser/auth/settings` returns `{ "emailEnabled": false }`; session DTOs
+add `emailEnabled` and retain the true stored `verified` status. Verification,
+resend, reset requests and reset consumption return 503 / `email_disabled`.
+No email password recovery is available. Existing mailbox verification timestamps
+are never fabricated or overwritten. Setting `EMAIL_ENABLED=true` (also the
+default when omitted) restores verification gates and email/recovery behavior;
+configure SMTP and recreate containers before enabling it in production.
+
 The backend has separate browser and gateway listeners. Neither is intended to
 be publicly reachable directly. Browser account endpoints, `/healthz` and
 `/readyz`, schema migrations, and configuration checks are implemented.
@@ -434,7 +451,7 @@ authenticated actions additionally require the session cookie.
 | Method and private path | Request | Success |
 | --- | --- | --- |
 | `GET /browser/auth/csrf` | No body; optional session cookie | 200 `{ "csrfToken": "..." }` and CSRF cookie |
-| `GET /browser/auth/session` | Session cookie | 200 `{ "id": "<uuid>", "handle": "Alice", "verified": false, "recentPasswordAuth": true }` |
+| `GET /browser/auth/session` | Session cookie | 200 `{ "id": "<uuid>", "handle": "Alice", "verified": false, "recentPasswordAuth": true, "emailEnabled": true }` |
 | `POST /browser/auth/register` | `{ "email": "alice@example.test", "handle": "Alice", "password": "a long example password" }` | Empty 202, including duplicate email; no automatic login |
 | `POST /browser/auth/login` | `{ "email": "alice@example.test", "password": "a long example password" }` | 200 `{ "csrfToken": "..." }` plus **two separate** Set-Cookie headers for rotated session and CSRF context |
 | `POST /browser/auth/logout` | No body | 200 `{ "csrfToken": "..." }`, removed session cookie and new anonymous CSRF context; idempotent with refreshed context |

@@ -6,6 +6,11 @@ Provide the elementary social behavior of a text-first Twitter clone, with consi
 
 ## ADDED Requirements
 
+Email policy amendment: references to a verified user/owner below require mailbox
+verification only when `EMAIL_ENABLED=true`. With false, an authenticated user
+can perform the same operations, with unchanged ownership, content and rate-limit
+checks. Actual mailbox verification records SHALL NOT be fabricated.
+
 ### Requirement: Read and edit public profiles
 The system SHALL expose public profiles containing a handle, display name, biography, join date, follower/following counts, and post count. Only the verified profile owner SHALL edit the display name or biography. Display names MUST contain 1–50 Unicode code points and biographies at most 160; handles SHALL be immutable for this MVP.
 

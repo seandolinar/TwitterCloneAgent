@@ -74,7 +74,7 @@ async fn email_disabled_allows_existing_and_new_unverified_accounts_without_clai
             )
             .await
             .0,
-        StatusCode::OK
+        StatusCode::NO_CONTENT
     );
     assert_eq!(
         browser

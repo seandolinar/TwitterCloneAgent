@@ -6,6 +6,12 @@ Let users automate the same social operations available in the browser through a
 
 ## ADDED Requirements
 
+Email policy amendment: references to a verified user/owner below require mailbox
+verification only when `EMAIL_ENABLED=true`. With false, logged-in accounts may
+create/list/revoke their keys after the same recent-password/session checks, and
+the gateway may authorize their registered keys with unchanged principal,
+keyspace, owner, expiry, revocation and permission validation.
+
 ### Requirement: Expose a versioned social API
 The system SHALL expose social reads and writes under `/v1`, including current-user lookup, profile read/update, profile posts, home feed, post create/read/delete, follow/unfollow, and like/unlike. All third-party routes MUST require an API key, including reads of otherwise public content. Both browser and API requests MUST apply the same social validation and ownership rules.
 

@@ -1,5 +1,26 @@
 # Design
 
+## Approved MVP email amendment (2026-10-23)
+
+`EMAIL_ENABLED` is a validated boolean runtime setting (omitted: true). Local and
+Compute templates select false for the requested email-free MVP. Disabling it
+skips SMTP configuration/worker startup and email-intent enqueueing and rejects
+email verification/resend/password-reset request/consumption with a safe 503
+`email_disabled`. Existing email intents pause without deletion. New and existing
+unverified accounts can use social/keys; browser guards, shared social services,
+key-management account locks and the integration listener all apply the same
+setting, preserving sessions, passwords, CSRF, ownership, scopes and rate limits.
+Do not set or overwrite `users.verified_at` to implement this option. Re-enabling
+email restores verification requirements for those accounts.
+
+Expose only `emailEnabled` through browser `GET /api/auth/settings`, proxying the
+private `/browser/auth/settings` endpoint; session DTOs also include the setting
+while keeping `verified` truthful. Request-scoped UI queries adapt signup/login,
+social/key controls and direct verification/recovery screens. No SMTP/sender
+domain is required in disabled production mode; HTTPS origin and other production
+security requirements continue to apply. Email-specific requirements in the
+earlier decisions below apply to enabled mode.
+
 ## Context
 
 See `proposal.md` for motivation and the five delta specs for behavior. The project began without application code; Rust/TanStack scaffolds, local containers, configuration validation, and database migrations/readiness are now implemented. The task checkboxes are the source of truth for implementation progress; descriptions below include both existing foundations and pending work.
