@@ -1,9 +1,11 @@
 # Rust API
 
 The backend has separate browser and gateway listeners. Neither is intended to
-be publicly reachable directly. Browser `/healthz` and `/readyz`, schema
-migrations, and configuration checks are implemented. Account, social, and key
-routes are still pending.
+be publicly reachable directly. Browser account endpoints, `/healthz` and
+`/readyz`, schema migrations, and configuration checks are implemented.
+The browser social API is implemented; key routes are still pending. Password reset is implemented and
+locally tested; its gateway key-denial acceptance check requires the pending
+integration adapter.
 
 ## Local toolchain
 
@@ -101,11 +103,22 @@ Each backend sweeps at most 1,000 expired buckets every minute, using
 `SKIP LOCKED` so replicas can clean up safely without communicating. Active
 buckets are retained, and shutdown stops the maintenance task.
 
-This implements the shared counter/error/cleanup infrastructure. Authentication
-and social endpoints are still pending; their policy wiring belongs to the
-corresponding tasks. Planned defaults remain five account/IP login attempts per
-15 minutes plus 50 per IP, and 30 social writes per minute per user. Per-key
-Unkey gateway limits remain a separate integration.
+Authentication endpoints now use the shared limiter before credential/hash work.
+Defaults are five email/IP login attempts per 15 minutes plus 50 per IP;
+registration five per hour per IP (also checked per email/IP); reset requests
+and verification resends three per account/IP per 15 minutes plus 20 per IP;
+reauthentication five per user/IP per 15 minutes plus 50 per IP. Verification
+consumption uses the recovery limits with a private token/IP identifier.
+Each operation has a distinct budget. Failures consume attempts; CSRF/origin
+rejections do not. Public forwarding headers never select the limit bucket.
+
+Override positive attempt counts with `AUTH_LOGIN_ACCOUNT_IP_LIMIT`,
+`AUTH_LOGIN_IP_LIMIT`, `AUTH_REGISTRATION_IP_LIMIT`,
+`AUTH_RECOVERY_ACCOUNT_IP_LIMIT`, `AUTH_RECOVERY_IP_LIMIT`,
+`AUTH_REAUTH_ACCOUNT_IP_LIMIT`, and `AUTH_REAUTH_IP_LIMIT`. Empty/unset uses
+the defaults; zero/negative/invalid values fail startup. Windows remain fixed.
+Use identical settings across replicas. Social writes use the separate shared
+user budget documented below; per-key Unkey gateway limits remain pending.
 
 Run shared-limit integration tests with a disposable database:
 
@@ -186,9 +199,9 @@ are zeroized; hash-bearing internal rows/services do not implement diagnostic
 formatting. Public identities contain only user ID, handle, and verification
 status, not the email or hash.
 
-These are backend primitives, **not exposed account HTTP endpoints yet**.
-CSRF and endpoint throttles are wired by subsequent tasks before browser
-onboarding is available.
+These services are exposed only through the private browser adapter with
+CSRF/origin checks and shared endpoint throttles. The allowlisted browser proxy
+is implemented; onboarding screens are still pending.
 
 ```sh
 python3 tests/with_postgres.py cargo test \
@@ -218,8 +231,9 @@ log token-bearing URLs, message bodies, or underlying transport credentials.
 The default live foundation check now delivers a real verification message to
 Compose Mailpit and verifies its digest-backed token without printing it. Domain
 tests cover expiry, replay, wrong purpose, concurrent consumption, resend,
-generic recovery requests, and SMTP failure. Password replacement/session/key
-revocation remains a separate pending recovery task.
+generic recovery requests, and SMTP failure. Password replacement and local
+credential revocation are covered by the recovery tests below; live provider
+cleanup and gateway admission remain pending.
 
 ```sh
 python3 tests/with_postgres.py cargo test \
@@ -260,5 +274,280 @@ python3 tests/with_postgres.py cargo test \
 
 The tests cover rotation, failed-login preservation, logout/revocation,
 idle/absolute expiry, idle renewal without absolute extension, reauthentication,
-cookie attributes/removal, maintenance, and unavailable storage. The account
-HTTP endpoints are still pending CSRF/throttle wiring.
+cookie attributes/removal, maintenance, and unavailable storage.
+
+## Browser security adapter
+
+`GET /browser/auth/csrf` returns `{ "csrfToken": "..." }` and an HttpOnly
+CSRF-context cookie. Unsafe browser methods must send `X-CSRF-Token`, that
+cookie, and exactly the configured external `Origin` (no trailing slash).
+Missing, duplicate, `null`, or hostile origins/tokens are rejected with 403.
+There is no permissive CORS or Referer fallback.
+
+Signed double-submit pairs use the pinned `csrf` library, expire after one hour,
+and are cryptographically bound to the live session digest, or to a signed random
+anonymous context before login. Login rotates both the session and CSRF pair;
+logout clears the session and returns a new anonymous pair. Clients must replace
+their in-memory token with the returned `csrfToken`, or bootstrap again after
+session changes. Production CSRF cookies use `__Host-csrf`, Secure, HttpOnly,
+SameSite=Lax, path `/`, no Domain; loopback development uses
+`twitterclone_dev_csrf` without Secure. Bootstrap responses are `no-store`.
+
+Browser identity comes only from the live session cookie; Bearer and
+`X-Unkey-*` headers cannot establish it. The shared request context exposes
+authenticated/verified guards; unverified users can inspect their session,
+resend verification, and log out, but cannot reauthenticate for protected actions.
+Social routes use that same layer; their services enforce verification and
+ownership. Future key routes must use it too.
+
+Client IP is a private ingress contract: `X-Twitterclone-Client-IP` may be
+supplied only by the trusted frontend, which must overwrite caller values from
+trusted peer/hosting context. Without it, Rust uses its socket peer. Missing
+peer context fails closed. `Forwarded`/`X-Forwarded-For` never establish identity
+here. Neither Rust listener may be published. Frontend boundary tests separately
+exercise raw path rejection and trusted socket-derived IP forwarding; see
+`../web/README.md`.
+
+```sh
+python3 tests/with_postgres.py cargo test \
+  --manifest-path apps/api/Cargo.toml --test browser_auth -- --ignored
+```
+
+These HTTP adapter tests cover login CSRF, missing/hostile/duplicate origins
+and tokens, session-bound pair transplantation, forged identities, unverified
+reauthentication, safe verification POSTs, rotation/logout, shared endpoint
+limits, spoofed public forwarding headers, and storage-outage denial.
+
+## Browser social HTTP contract
+
+The private cookie listener exposes these routes under `/browser/v1`.
+The browser proxy maps public `/api/v1` to this namespace; `/v1` is
+reserved for the separate key-authenticated integration listener. Sending a
+Bearer key or `X-Unkey-*` header here never establishes a user.
+
+| Method and private route | Request | Success |
+| --- | --- | --- |
+| `GET /browser/v1/me` | Session cookie | 200 Profile |
+| `PATCH /browser/v1/me` | `{ "displayName": "Alice", "biography": "Hello" }` | 200 updated Profile |
+| `GET /browser/v1/profiles/{handle}` | Case-insensitive handle | 200 Profile |
+| `GET /browser/v1/profiles/{handle}/posts` | Optional `limit`, `cursor` | 200 Page |
+| `GET /browser/v1/feed` | Verified session; optional `limit`, `cursor` | 200 Page |
+| `POST /browser/v1/posts` | `{ "body": "Hello" }` | 201 Post |
+| `GET /browser/v1/posts/{id}` | Post UUID | 200 Post |
+| `DELETE /browser/v1/posts/{id}` | Author session | Empty 204 |
+| `PUT /browser/v1/me/following/{id}` | Target user UUID; no body | Empty 204 |
+| `DELETE /browser/v1/me/following/{id}` | Target user UUID; no body | Empty 204 |
+| `PUT /browser/v1/posts/{id}/like` | Post UUID; no body | Empty 204 |
+| `DELETE /browser/v1/posts/{id}/like` | Post UUID; no body | Empty 204 |
+
+Every unsafe method requires the exact Origin and CSRF context described above.
+Only authenticated verified users can mutate or read a personalized feed.
+Anonymous and unverified visitors may read public profiles/posts/profile lists;
+`me` returns the same public profile shape for a valid session, not private
+account fields. No caller-selected author/owner/handle is accepted in write DTOs;
+unknown fields are rejected. There is no route for editing someone else's profile.
+Deleting a missing/already deleted post returns 404; deleting another author's
+post returns 403. Post deletion cascades likes. Follow/like changes are
+idempotent, but still consume write attempts. Self-follow is 422; absent targets
+and likes/unlikes of absent or deleted posts are 404.
+
+Profile JSON:
+
+```json
+{
+  "id": "<user-uuid>",
+  "handle": "Alice",
+  "displayName": "Alice",
+  "biography": "Hello",
+  "joinedAt": "2026-01-01T00:00:00Z",
+  "followerCount": 0,
+  "followingCount": 0,
+  "postCount": 1,
+  "viewerFollows": false
+}
+```
+
+Post JSON:
+
+```json
+{
+  "id": "<post-uuid>",
+  "authorId": "<user-uuid>",
+  "authorHandle": "Alice",
+  "authorDisplayName": "Alice",
+  "body": "Hello",
+  "createdAt": "2026-01-01T00:00:00Z",
+  "likeCount": 0,
+  "viewerLikes": false
+}
+```
+
+Page JSON is `{ "items": [<Post>, ...], "nextCursor": "<opaque-cursor-or-null>" }`.
+`nextCursor` is JSON `null` when no further page exists, otherwise a string.
+Pass it unchanged in the next request's URL-encoded `cursor` parameter. Pages
+default to 20, accept 1–100, and sort `(createdAt, id)` descending. The feed
+contains only own/currently-followed authors; unfollowing changes future pages.
+Cursors encode strictly validated versioned ordering fields, confer no identity
+or authorization, and remain usable if their anchor post is deleted. Inserts
+ahead of a cursor do not repeat earlier items. Invalid cursor/limit values
+return 422 `invalid_pagination`; malformed/unknown query fields or UUID path
+syntax return safe 400 errors.
+
+Display names contain 1–50 Unicode code points; biographies at most 160.
+Posts contain 1–280 code points and at least one non-whitespace character.
+Text is preserved, not trimmed, interpreted as HTML, or counted as UTF-16 units.
+Clients must render it as text. Counts are computed from current indexed
+relationships, and authenticated responses include viewer relationship flags.
+
+All social writes share **one** PostgreSQL budget per user across operation
+types and service instances: 30 attempts per minute by default, configurable via
+positive `SOCIAL_WRITES_PER_MINUTE`. Rejections use the same safe application
+envelope and no-store/referrer protections as account endpoints; 429 includes
+`Retry-After`, and dependency failure never grants access. HTTP tests cover
+anonymous/unverified/owner/other-user authorization, forged principal rejection,
+spoofed ownership fields, CSRF, idempotent operations, and shared browser budgets.
+Integration-listener permission/cross-adapter budget checks remain task 6.4/4.3.
+
+```sh
+python3 tests/with_postgres.py cargo test \
+  --manifest-path apps/api/Cargo.toml --test social --test browser_social -- --ignored
+```
+
+## Account HTTP contract
+
+All paths below belong to the **private cookie listener**, not `/v1`. The
+public browser proxy maps `/api/auth/*` to `/browser/auth/*`. There is no API-key
+authentication on account routes.
+JSON request fields are exact, case-sensitive, and reject unknown fields.
+Passwords are never trimmed. Send `Content-Type: application/json` for JSON bodies.
+Every POST requires the original exact `Origin`, CSRF header and CSRF cookie;
+authenticated actions additionally require the session cookie.
+
+| Method and private path | Request | Success |
+| --- | --- | --- |
+| `GET /browser/auth/csrf` | No body; optional session cookie | 200 `{ "csrfToken": "..." }` and CSRF cookie |
+| `GET /browser/auth/session` | Session cookie | 200 `{ "id": "<uuid>", "handle": "Alice", "verified": false, "recentPasswordAuth": true }` |
+| `POST /browser/auth/register` | `{ "email": "alice@example.test", "handle": "Alice", "password": "a long example password" }` | Empty 202, including duplicate email; no automatic login |
+| `POST /browser/auth/login` | `{ "email": "alice@example.test", "password": "a long example password" }` | 200 `{ "csrfToken": "..." }` plus **two separate** Set-Cookie headers for rotated session and CSRF context |
+| `POST /browser/auth/logout` | No body | 200 `{ "csrfToken": "..." }`, removed session cookie and new anonymous CSRF context; idempotent with refreshed context |
+| `POST /browser/auth/verify-email` | `{ "token": "<email-link-token>" }` | Empty 204; does not create a session |
+| `POST /browser/auth/resend-verification` | No body; session required | Empty 202, including already verified accounts |
+| `POST /browser/auth/forgot-password` | `{ "email": "alice@example.test" }` | Empty 202 whether or not the address exists |
+| `POST /browser/auth/reset-password` | `{ "token": "<email-link-token>", "password": "a new long example password" }` | 200 `{ "csrfToken": "..." }` and removed session cookie; explicit fresh login required |
+| `POST /browser/auth/reauthenticate` | `{ "password": "a long example password" }`; verified session required | Empty 204; extends recent-password window to five minutes |
+
+`GET /browser/auth/session` returns 401 for absent/revoked/expired cookies. Its
+DTO contains no email, hashes, bearer values, or token digests. Login failures
+share 401 `invalid_credentials`. Validation errors use 422, public handle
+conflicts 409, CSRF or unverified restrictions 403, limits 429 with a positive
+`Retry-After`, and dependency failures 503. Malformed JSON/unsupported content
+types use 400/415; unknown fields or wrong JSON shapes use 422.
+
+Application failures always use the safe envelope below. The request ID is
+server-generated and matches `X-Request-Id`; raw parser/database/provider
+diagnostics and submitted input are not echoed:
+
+```json
+{
+  "error": { "code": "invalid_token", "message": "This link is invalid or has expired." },
+  "requestId": "<server-generated-uuid>"
+}
+```
+
+All responses use `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+and `Referrer-Policy: no-referrer`. Never put passwords or link tokens in API
+query parameters; submit link tokens in POST bodies after opening the UI page.
+Do not log request headers/bodies/query strings, run token-bearing analytics,
+or persist session/password/CSRF/API-key secrets in browser storage.
+
+Example client sequence (values are placeholders, not working credentials):
+
+```text
+GET /browser/auth/csrf
+  -> save the CSRF cookie; keep response.csrfToken in memory
+POST /browser/auth/login
+  Origin: http://localhost:3000
+  Content-Type: application/json
+  Cookie: twitterclone_dev_csrf=<cookie-from-bootstrap>
+  X-CSRF-Token: <token-from-bootstrap>
+  {"email":"alice@example.test","password":"a long example password"}
+  -> save each Set-Cookie independently; replace the in-memory csrfToken
+GET /browser/auth/session
+  Cookie: <current cookies>
+POST /browser/auth/logout
+  Origin: http://localhost:3000
+  Cookie: <current cookies>
+  X-CSRF-Token: <current in-memory token>
+  -> save cookie removal/new CSRF cookie; replace the in-memory csrfToken
+```
+
+The browser HTTP tests exercise this sequence and the documented JSON/status
+shapes, malformed input, duplicate-email acknowledgements, unknown-email versus
+wrong-password failure, and absence of submitted secrets from error/session
+payloads. A real-process test checks that token-bearing failed requests do not
+leak into captured application stdout/stderr.
+
+### Email delivery and recovery limitations
+
+The default Compose SMTP service is `mail:1025`, with mail inspection at the
+configured loopback mail UI (normally http://localhost:8025). Production needs
+an external STARTTLS SMTP endpoint, operator-supplied sender, and both SMTP
+credentials. See runtime configuration and email-worker sections above.
+Opening email links does not consume them; a protected POST does. Only the
+latest delivered/retried token for each purpose stays active: verification
+tokens expire within 24 hours, password-reset tokens within 30 minutes.
+Session inactivity expires after 24 hours and absolute lifetime after seven
+days. CSRF contexts expire after one hour. Password reauthentication lasts
+five minutes.
+
+Email delivery is at least once with bounded durable retry. Delayed/retried
+mail can supersede an earlier link; request a fresh email if a link expired or
+was used. Lost access to the email inbox has no administrator/MFA recovery
+fallback in this MVP. Password reset does not implicitly verify an account,
+does not log it in, and does not rotate the independently managed application
+security secrets. Provider cleanup may lag local key revocation; running
+requests are not cancelled. Full key-denial acceptance remains tracked in 3.5.
+
+For production, require HTTPS, Secure host-only cookies, private listeners,
+exact configured origin, independently generated stable security secrets shared
+across replicas, authenticated SMTP, and database availability. Production TLS
+database/Compute delivery checks and the remaining product work are still
+pending: passing account configuration checks is not production readiness.
+
+## Atomic password recovery
+
+`POST /browser/auth/forgot-password` with `{ "email": "..." }` returns the same
+empty 202 acknowledgement for registered, unknown, and malformed addresses
+(subject to the same endpoint throttles). Only registered addresses queue an
+intent; a failed delivery never replaces the password or revokes sessions.
+
+`POST /browser/auth/reset-password` accepts `{ "token": "...", "password": "..." }`
+under the same Origin/CSRF rules. It enforces the registration password policy
+without trimming. A valid reset transaction consumes the purpose-bound token,
+replaces the password hash, consumes remaining reset tokens, revokes every owner
+session, locally revokes every owner key, and inserts durable provider-deletion
+intents for newly revoked keys. Account-first locking serializes resets with
+login/reauthentication and token delivery; racing consumption has one winner.
+Any failure, including cleanup enqueue failure, rolls back every change.
+
+Success returns 200 with a new anonymous `csrfToken` and clears the requesting
+browser's session cookie. It does not log the user in. Expired, consumed, and
+wrong-purpose tokens return the same safe 422 error; an invalid replacement
+password does not consume a valid token. Other accounts' sessions/keys are
+untouched. Already-running requests may finish; revocation governs new requests
+after commit.
+
+```sh
+python3 tests/with_postgres.py cargo test \
+  --manifest-path apps/api/Cargo.toml --test recovery -- --ignored
+```
+
+The tests prove old-password/session rejection, exact replacement-password
+whitespace, local key-state denial, queued cleanup without provider access,
+wrong-purpose/expired/replayed token rejection, reset/login races, and full
+rollback on a late enqueue error. The HTTP tests additionally cover generic
+acknowledgements, reset CSRF, cookie clearing, and forced fresh login.
+**These tests do not prove gateway rejection of old keys:** the integration
+authentication adapter (task 6.4) and real provider cleanup are not implemented
+yet. Task 3.5 remains unchecked until its old-key request acceptance check can
+run through that adapter.

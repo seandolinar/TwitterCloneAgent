@@ -5,5 +5,5 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   server: { port: 3000, strictPort: true },
-  plugins: [tanstackStart(), nitro({ preset: 'node-server' }), viteReact()],
+  plugins: [tanstackStart(), nitro({ preset: 'node-server', serverDir: './server' }), viteReact()],
 })

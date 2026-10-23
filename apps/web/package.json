@@ -10,7 +10,9 @@
     "dev": "vite dev --host 127.0.0.1",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts",
+    "test:proxy": "npm run build && node --test tests/proxy-runtime.ts"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.46",

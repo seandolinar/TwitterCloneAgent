@@ -6,6 +6,8 @@
 !vite.config.ts
 !src/
 !src/**
+!server/
+!server/**
 
 # Never include local credentials, even beneath an allowed directory.
 **/.env

@@ -17,8 +17,20 @@ pub struct Config {
     pub database_url: String,
     pub csrf_secret: String,
     pub rate_limit_secret: String,
+    pub auth_limits: AuthLimits,
+    pub social_writes_per_minute: u32,
     pub smtp: SmtpConfig,
     pub unkey: Option<UnkeyConfig>,
+}
+
+pub struct AuthLimits {
+    pub login_account_ip: u32,
+    pub login_ip: u32,
+    pub registration_ip: u32,
+    pub recovery_account_ip: u32,
+    pub recovery_ip: u32,
+    pub reauthentication_account_ip: u32,
+    pub reauthentication_ip: u32,
 }
 
 pub struct SmtpConfig {
@@ -122,6 +134,16 @@ impl Config {
                 "CSRF_SECRET and RATE_LIMIT_SECRET must be distinct",
             ));
         }
+        let auth_limits = AuthLimits {
+            login_account_ip: positive_limit(values, "AUTH_LOGIN_ACCOUNT_IP_LIMIT", 5)?,
+            login_ip: positive_limit(values, "AUTH_LOGIN_IP_LIMIT", 50)?,
+            registration_ip: positive_limit(values, "AUTH_REGISTRATION_IP_LIMIT", 5)?,
+            recovery_account_ip: positive_limit(values, "AUTH_RECOVERY_ACCOUNT_IP_LIMIT", 3)?,
+            recovery_ip: positive_limit(values, "AUTH_RECOVERY_IP_LIMIT", 20)?,
+            reauthentication_account_ip: positive_limit(values, "AUTH_REAUTH_ACCOUNT_IP_LIMIT", 5)?,
+            reauthentication_ip: positive_limit(values, "AUTH_REAUTH_IP_LIMIT", 50)?,
+        };
+        let social_writes_per_minute = positive_limit(values, "SOCIAL_WRITES_PER_MINUTE", 30)?;
         let smtp = SmtpConfig {
             from_address: match get("EMAIL_FROM") {
                 Some(value) => value,
@@ -202,6 +224,8 @@ impl Config {
             database_url,
             csrf_secret,
             rate_limit_secret,
+            auth_limits,
+            social_writes_per_minute,
             smtp,
             unkey,
         })
@@ -216,6 +240,21 @@ fn required_secret(value: Option<String>, message: &'static str) -> Result<Strin
 
 pub(crate) fn secret_is_valid(secret: &str) -> bool {
     secret.len() >= 32 && !secret.trim().is_empty()
+}
+
+fn positive_limit(
+    values: &HashMap<String, String>,
+    key: &str,
+    default: u32,
+) -> Result<u32, ConfigError> {
+    match values.get(key).map(String::as_str) {
+        None | Some("") => Ok(default),
+        Some(value) => value
+            .parse()
+            .ok()
+            .filter(|limit| *limit > 0)
+            .ok_or(ConfigError("Attempt limits must be positive integers")),
+    }
 }
 
 fn boolean(
@@ -282,6 +321,31 @@ mod tests {
         assert!(!config.cookie_secure);
         assert!(config.browser_bind.ip().is_loopback());
         assert!(config.gateway_bind.ip().is_loopback());
+    }
+
+    #[test]
+    fn auth_attempt_limits_are_configurable_but_cannot_be_disabled() {
+        for key in [
+            "AUTH_LOGIN_ACCOUNT_IP_LIMIT",
+            "AUTH_LOGIN_IP_LIMIT",
+            "AUTH_REGISTRATION_IP_LIMIT",
+            "AUTH_RECOVERY_ACCOUNT_IP_LIMIT",
+            "AUTH_RECOVERY_IP_LIMIT",
+            "AUTH_REAUTH_ACCOUNT_IP_LIMIT",
+            "AUTH_REAUTH_IP_LIMIT",
+            "SOCIAL_WRITES_PER_MINUTE",
+        ] {
+            for invalid in ["0", "-1", "invalid-private-fixture", "4294967296"] {
+                let mut values = development();
+                values.insert(key.into(), invalid.into());
+                reject(&values, "positive integers");
+            }
+        }
+        let mut values = development();
+        values.insert("AUTH_LOGIN_IP_LIMIT".into(), "12".into());
+        let config = Config::from_values(&values).unwrap();
+        assert_eq!(config.auth_limits.login_ip, 12);
+        assert_eq!(config.auth_limits.login_account_ip, 5);
     }
 
     #[test]

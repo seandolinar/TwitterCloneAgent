@@ -3,10 +3,12 @@
 A text-first Twitter-style MVP with a Rust/Axum API, a TanStack Start frontend,
 PostgreSQL, and planned Unkey API-key/gateway integration.
 
-**Current status:** application/container foundations and the versioned database
-schema are implemented. Account flows, social features, and Unkey integration are
-still pending. The homepage is an explicit scaffold, not a working social network.
-Do not deploy it as a finished product.
+**Current status:** application/container foundations, the versioned database
+schema, private browser account endpoints, and the social API (profiles, posts,
+relationships, and chronological timelines) and the allowlisted browser proxy are
+implemented. Browser screens and Unkey integration are still pending. Recovery's old-key gateway acceptance check is
+also pending that adapter. The homepage is an explicit scaffold, not a working
+social network. Do not deploy it as a finished product.
 
 **Approved production target:** one Unkey Compute app containing TanStack Start
 and Rust behind a single ingress, with loopback-only Rust interfaces and external

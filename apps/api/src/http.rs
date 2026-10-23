@@ -62,15 +62,26 @@ impl Default for HttpLimits {
     }
 }
 
-pub fn browser_router(pool: PgPool) -> Router {
+pub fn browser_router(
+    pool: PgPool,
+    auth: &std::sync::Arc<crate::browser::BrowserAuth>,
+    social: crate::social::Social,
+) -> Router {
+    let social_routes =
+        auth.protect(Router::new().nest("/browser/v1", crate::social_http::routes(social)));
+    browser_routes(pool, auth.routes().merge(social_routes))
+}
+
+fn browser_routes(pool: PgPool, account_routes: Router) -> Router {
     bounded(
         Router::new()
             .route("/healthz", get(|| async { StatusCode::OK }))
             .route("/readyz", get(readiness))
+            .with_state(pool)
+            .merge(account_routes)
             .fallback(not_found)
             .method_not_allowed_fallback(method_not_allowed)
-            .layer(middleware::from_fn(strip_gateway_identity))
-            .with_state(pool),
+            .layer(middleware::from_fn(strip_gateway_identity)),
         HttpLimits::default(),
     )
 }
@@ -154,6 +165,7 @@ async fn strip_gateway_identity(mut request: Request, next: Next) -> Response {
     for name in names {
         request.headers_mut().remove(name);
     }
+    request.headers_mut().remove(header::AUTHORIZATION);
     next.run(request).await
 }
 
@@ -211,6 +223,10 @@ async fn request_context(mut request: Request, next: Next) -> Response {
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
+    response.headers_mut().insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
     response
 }
 
@@ -230,7 +246,7 @@ mod tests {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://127.0.0.1:1/unavailable")
             .unwrap();
-        browser_router(pool)
+        browser_routes(pool, Router::new())
     }
 
     fn request(path: &str) -> HttpRequest<Body> {

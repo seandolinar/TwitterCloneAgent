@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 mod email;
 mod passwords;
+mod recovery;
 mod sessions;
 pub use email::EmailDelivery;
 pub use passwords::{Passwords, validate_password};

@@ -1,13 +1,17 @@
 use std::{
     io::{Read, Write},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream},
+    sync::Arc,
     time::Duration,
 };
-use twitter_clone_api::{accounts::EmailDelivery, config::Config, database, http, maintenance};
+use twitter_clone_api::{
+    accounts::EmailDelivery, browser::BrowserAuth, config::Config, database, http, maintenance,
+    social::Social,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::from_env()?;
+    let config = Arc::new(Config::from_env()?);
     let command = std::env::args().nth(1);
     match command.as_deref() {
         Some("healthcheck") => return healthcheck(config.browser_bind),
@@ -33,10 +37,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     eprintln!("Browser API listening on {}", config.browser_bind);
     eprintln!("Gateway API listening on {}", config.gateway_bind);
+    let auth = Arc::new(BrowserAuth::new(pool.clone(), config.clone()).await?);
+    let social = Social::new(
+        pool.clone(),
+        &config.rate_limit_secret,
+        config.social_writes_per_minute,
+    )
+    .map_err(|_| "Social service configuration is invalid")?;
     let maintenance = tokio::spawn(maintenance::run(pool.clone()));
     let delivery = tokio::spawn(EmailDelivery::new(pool.clone(), &config)?.run());
     let servers = tokio::try_join!(
-        axum::serve(browser, http::browser_router(pool.clone())).with_graceful_shutdown(shutdown()),
+        axum::serve(
+            browser,
+            http::browser_router(pool.clone(), &auth, social)
+                .into_make_service_with_connect_info::<SocketAddr>()
+        )
+        .with_graceful_shutdown(shutdown()),
         axum::serve(gateway, http::gateway_router()).with_graceful_shutdown(shutdown()),
     );
     maintenance.abort();

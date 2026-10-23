@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.json vite.config.ts ./
 COPY src ./src
+COPY server ./server
 RUN npm run build && npm run typecheck
 
 FROM node:24.18.1-bookworm-slim AS runtime
