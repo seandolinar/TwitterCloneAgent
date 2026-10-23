@@ -25,6 +25,8 @@
 !infra/compute/
 !infra/compute/Dockerfile
 !infra/compute/entrypoint.mjs
+# Public Supabase trust anchor only; no client certificates or private keys.
+!supabase-ca.crt
 **/.env
 **/.env.*
 **/*.pem

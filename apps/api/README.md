@@ -26,6 +26,29 @@ through application requests; live provider acceptance remains separate.
 
 ## Local toolchain
 
+For a read-only connectivity diagnosis, the API supports `check-db`. It needs
+only `DATABASE_URL`, uses the app's SQLx/TLS implementation and the URL's supplied
+TLS settings, and performs DNS/TCP checks, PostgreSQL authentication and
+`SELECT 1`. It does not initialize the application or run migrations. Diagnostic
+errors use fixed categories rather than raw driver/provider text, URLs or secrets.
+Startup also logs a safe connection-error category before its generic failure.
+
+To test a hosted URL locally, save only `DATABASE_URL=...` in private
+`.env.compute-check` (ignored by Git), then run:
+
+```sh
+docker build -t twitterclone-api:db-check apps/api
+docker run --rm --env-file .env.compute-check \
+  --entrypoint twitter-clone-api twitterclone-api:db-check check-db
+```
+
+Use the same URL and `sslmode=verify-full` as the deployment. An explicit
+`sslrootcert` file must exist inside the checking container at that URL's path;
+mount its public CA certificate read-only when needed. A successful local check
+proves access from this computer/container, not Unkey's network. Re-run the same
+command in the deployed image/environment when runtime shell access is available.
+Never put the connection URL in command arguments or paste it into chat.
+
 The repository pins Rust in `rust-toolchain.toml`. With rustup installed:
 
 ```sh

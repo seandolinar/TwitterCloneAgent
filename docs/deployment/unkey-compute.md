@@ -23,8 +23,10 @@ docker build -f infra/compute/Dockerfile -t twitterclone-combined:check .
 ```
 
 The root `.dockerignore` is an allowlist; local env files, node_modules, target
-directories, tests, Git history, certificates/private keys, and databases do not
-enter the build context. Locked multi-stage builds use Rust 1.99.1 and Node
+directories, tests, Git history, private keys, and databases do not
+enter the build context. The explicitly allowed public `supabase-ca.crt` is
+included at `/app/supabase-ca.crt` for PostgreSQL certificate verification.
+Locked multi-stage builds use Rust 1.99.1 and Node
 24.18.1. The runtime user is `node` (UID 1000). No build arguments or build-time
 secrets are needed. Use runtime secret injection only.
 
@@ -112,8 +114,9 @@ build assets, command arguments/shell history, request logs, or chat.
   `sslcert`, `sslkey`, and `application_name` query parameters are accepted;
   duplicates/aliases cannot silently lower TLS verification. URL-encode special
   credentials. Supply a trusted root with `sslrootcert` when the provider's CA
-  is not in system trust. Certificate paths refer to private runtime mounts,
-  never baked-in private keys. Review external database firewall/egress access.
+  is not in system trust. Public CA certificates may be included in the image;
+  client private keys require private runtime mounts. Review external database
+  firewall/egress access.
 - `CSRF_SECRET` and `RATE_LIMIT_SECRET`: two independently generated values of
   at least 32 bytes, distinct, stable across restarts, identical across replicas
   **within** this environment only. Never use known example values. Coordinate
@@ -130,6 +133,59 @@ build assets, command arguments/shell history, request logs, or chat.
   key access. Compute's managed gateway owns verification; do not place its
   verify root in the app. A separate narrowly scoped operator credential for
   Compute settings is not an application runtime credential.
+
+### Supabase PostgreSQL setup
+
+The selected hosted database vendor is Supabase. Use its PostgreSQL database
+through the Rust backend; existing app accounts/passwords/sessions remain owned
+by Rust. `EMAIL_ENABLED=false` needs no Supabase Auth or SMTP configuration.
+
+1. Create a dedicated Supabase project for the initial deployment, in a region
+   near the chosen Unkey region. Save its database password privately. When
+   adding production alongside preview, use separate projects/data and credentials
+   as described in the isolation checklist below.
+2. Before applying application migrations, open the project's Data API integration
+   settings and turn **Enable Data API** off. Application tables are accessed
+   only through Rust; do not expose this schema through an additional public API.
+3. Open **Connect** and copy the PostgreSQL connection string. For a persistent
+   backend, a direct connection is suitable when IPv6 is available. For IPv4
+   compatibility, select **Session pooler**, normally port **5432**. Retain the
+   exact supplied hostname and username; don't construct them from the region.
+   Avoid transaction pooling (normally port 6543): this app uses prepared
+   statements and migration session locks. The session-mode path must pass the
+   connection/migration checks before being accepted for the deployment.
+4. Substitute the database password with reserved URL characters percent-encoded.
+   Set `sslmode=verify-full`. If the endpoint needs an explicit trusted CA,
+   download the server root certificate from Supabase Database settings and
+   save it as `supabase-ca.crt` in the repository root. The Compute image copies
+   this public certificate to `/app/supabase-ca.crt`. Use
+   `?sslmode=verify-full&sslrootcert=/app/supabase-ca.crt` at the end of the URL
+   (or append `&sslrootcert=/app/supabase-ca.crt` when `sslmode` is already set).
+   The public CA is safe to commit; passwords and client private keys are not.
+   Test certificate trust and
+   hostname verification from the application image; do not weaken TLS to make
+   startup succeed. Do not commit the populated URL or paste it into chat.
+5. Save that URL as **DATABASE_URL in the Unkey environment's runtime secrets**.
+   Keep the local Compose `.env` and its existing database volume unchanged.
+   Use `infra/compute/runtime.env.example` for the rest of the deployment values.
+6. On the first separately authorized deployment, the image's migration command
+   initializes the schema before serving. Confirm `/readyz`, then exercise
+   email-free signup/login/posting and authenticated API access. Supabase account
+   access, project setup, Data API disablement, network/TLS and migrations have
+   not been verified merely by choosing the vendor.
+
+Sources: [PostgreSQL connection modes and TLS](https://supabase.com/docs/guides/database/connecting-to-postgres),
+[disable the Data API](https://supabase.com/docs/guides/api/securing-your-api#disable-the-data-api).
+
+For the generic `Database connection failed` startup error, use the read-only
+[`check-db` command](../../apps/api/README.md#local-toolchain) with the same
+deployment URL and TLS settings. It separates DNS, TCP, TLS/configuration,
+authentication, missing-database and connection-limit failures without printing
+raw server errors. A local success does not prove Unkey egress or its runtime
+certificate paths. Do not run migrations to diagnose connectivity. Check that
+the Supabase project is active and the URL came from Connect / Session pooler
+(5432) if direct IPv6 connectivity is unavailable. After fixing settings, deploy
+again; no local Compose database reset is needed.
 
 ### Environment-isolation checklist
 

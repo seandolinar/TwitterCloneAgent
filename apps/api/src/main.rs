@@ -11,17 +11,32 @@ use twitter_clone_api::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Arc::new(Config::from_env()?);
     let command = std::env::args().nth(1);
+    if command.as_deref() == Some("check-db") {
+        let url =
+            std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required for check-db")?;
+        database::check_connection(&url).await?;
+        println!("Database connectivity and SELECT 1 succeeded. No migrations were run.");
+        return Ok(());
+    }
+    let config = Arc::new(Config::from_env()?);
     match command.as_deref() {
         Some("validate") => return Ok(()),
         Some("healthcheck") => return healthcheck(config.browser_bind),
         Some("migrate") | None => {}
-        Some(_) => return Err("Usage: twitter-clone-api [validate|healthcheck|migrate]".into()),
+        Some(_) => {
+            return Err("Usage: twitter-clone-api [validate|healthcheck|migrate|check-db]".into());
+        }
     }
     let pool = database::connect(&config.database_url)
         .await
-        .map_err(|_| "Database connection failed; check DATABASE_URL and database availability")?;
+        .map_err(|error| {
+            eprintln!(
+                "Database startup diagnostic: {}",
+                database::safe_connection_error(&error)
+            );
+            "Database connection failed; check DATABASE_URL and database availability"
+        })?;
     if command.as_deref() == Some("migrate") {
         database::MIGRATOR.run(&pool).await.map_err(
             |_| "Database migration failed; inspect schema compatibility before retrying",

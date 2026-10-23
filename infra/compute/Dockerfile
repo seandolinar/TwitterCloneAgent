@@ -26,6 +26,7 @@ WORKDIR /app
 COPY --from=api /build/target/release/twitter-clone-api /usr/local/bin/twitter-clone-api
 COPY --from=web --chown=node:node /build/.output ./.output
 COPY --chown=node:node infra/compute/entrypoint.mjs ./entrypoint.mjs
+COPY supabase-ca.crt ./supabase-ca.crt
 USER node
 EXPOSE 8080
 STOPSIGNAL SIGTERM
