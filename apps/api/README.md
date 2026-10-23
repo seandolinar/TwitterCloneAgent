@@ -3,9 +3,9 @@
 The backend has separate browser and gateway listeners. Neither is intended to
 be publicly reachable directly. Browser account endpoints, `/healthz` and
 `/readyz`, schema migrations, and configuration checks are implemented.
-The browser social API is implemented; key routes are still pending. Password reset is implemented and
-locally tested; its gateway key-denial acceptance check requires the pending
-integration adapter.
+The browser social/key APIs and private gateway social adapter are implemented.
+Password reset's immediate key-denial and cross-adapter write limits are tested
+through application requests; live provider acceptance remains separate.
 
 ## Local toolchain
 
@@ -201,7 +201,7 @@ status, not the email or hash.
 
 These services are exposed only through the private browser adapter with
 CSRF/origin checks and shared endpoint throttles. The allowlisted browser proxy
-is implemented; onboarding screens are still pending.
+and onboarding/recovery screens are implemented; see `../web/ACCOUNT_GUIDE.md`.
 
 ```sh
 python3 tests/with_postgres.py cargo test \
@@ -232,8 +232,9 @@ The default live foundation check now delivers a real verification message to
 Compose Mailpit and verifies its digest-backed token without printing it. Domain
 tests cover expiry, replay, wrong purpose, concurrent consumption, resend,
 generic recovery requests, and SMTP failure. Password replacement and local
-credential revocation are covered by the recovery tests below; live provider
-cleanup and gateway admission remain pending.
+credential revocation are covered by the recovery/gateway tests below. Cleanup
+and local gateway admission use fixture-tested real adapters; live provider
+acceptance remains pending.
 
 ```sh
 python3 tests/with_postgres.py cargo test \
@@ -406,7 +407,8 @@ envelope and no-store/referrer protections as account endpoints; 429 includes
 `Retry-After`, and dependency failure never grants access. HTTP tests cover
 anonymous/unverified/owner/other-user authorization, forged principal rejection,
 spoofed ownership fields, CSRF, idempotent operations, and shared browser budgets.
-Integration-listener permission/cross-adapter budget checks remain task 6.4/4.3.
+Gateway tests additionally exercise permission intersections, resource ownership,
+and the same per-user budget across both actual application adapters.
 
 ```sh
 python3 tests/with_postgres.py cargo test \
@@ -547,7 +549,18 @@ whitespace, local key-state denial, queued cleanup without provider access,
 wrong-purpose/expired/replayed token rejection, reset/login races, and full
 rollback on a late enqueue error. The HTTP tests additionally cover generic
 acknowledgements, reset CSRF, cookie clearing, and forced fresh login.
-**These tests do not prove gateway rejection of old keys:** the integration
-authentication adapter (task 6.4) and real provider cleanup are not implemented
-yet. Task 3.5 remains unchecked until its old-key request acceptance check can
-run through that adapter.
+Gateway request tests now replay an unchanged, previously valid principal after
+reset commits and verify that new protected reads and writes fail immediately.
+They prove local application denial despite cached provider identity, not live
+Unkey authentication or provider propagation timing.
+
+## Unkey management foundation
+
+The fixed-origin, bounded Unkey API Management client, browser key endpoints,
+and durable cleanup driver are implemented with local HTTP/PostgreSQL contract
+tests. See [the management
+contract](UNKEY.md) for the separate `api_`/`ks_` IDs, scoped credentials,
+non-recoverable creation, configured auto-applied limits, uncertain creation
+handling, soft-deletion semantics, and the private gateway permission boundary.
+Key settings screens remain a subsequent task. No live provider
+key was created or verified as part of these fixture checks.

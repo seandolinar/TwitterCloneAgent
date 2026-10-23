@@ -46,6 +46,7 @@ pub struct UnkeyConfig {
     pub management_root_key: String,
     pub api_id: String,
     pub keyspace_id: String,
+    pub requests_per_minute: u32,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -207,6 +208,7 @@ impl Config {
                     management_root_key,
                     api_id,
                     keyspace_id,
+                    requests_per_minute: positive_limit(values, "UNKEY_REQUESTS_PER_MINUTE", 60)?,
                 })
             }
             _ => {

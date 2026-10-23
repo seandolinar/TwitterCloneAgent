@@ -18,10 +18,26 @@ h2 { font-size: 1.1rem; }
 p { line-height: 1.65; }
 .intro { font-size: 1.15rem; color: #4d5f70; }
 .notice { margin-top: 3rem; padding: 1rem 1.5rem; border: 1px solid #cbd6df; border-radius: 1rem; }
+.site-header { width: min(100% - 2.5rem, 64rem); margin: 1.5rem auto; }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+.session-status { overflow-wrap: anywhere; font-size: .9rem; }
+.account-page { max-width: 32rem; margin-top: 3rem; }
+form { margin: 1.5rem 0; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.field { display: grid; gap: .5rem; margin-bottom: 1.25rem; }
+label { font-weight: 650; }
+input, button { font: inherit; padding: .75rem; border: 1px solid #8295a7; border-radius: .5rem; }
+input { width: 100%; min-width: 0; background: transparent; color: inherit; }
+button { cursor: pointer; background: #006b9c; color: white; font-weight: 650; }
+button:disabled { cursor: wait; opacity: .6; }
+small { line-height: 1.5; }
+.form-error { color: #ad2020; overflow-wrap: anywhere; }
+.plain-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (prefers-color-scheme: dark) {
   :root { color: #edf3f8; background: #111a22; }
   a, .eyebrow { color: #70cfff; }
   .intro { color: #b2c2d0; }
   .notice { border-color: #354858; }
+  .form-error { color: #ffaaaa; }
 }

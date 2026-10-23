@@ -58,6 +58,7 @@ services:
       UNKEY_MANAGEMENT_ROOT_KEY: ${UNKEY_MANAGEMENT_ROOT_KEY:-}
       UNKEY_API_ID: ${UNKEY_API_ID:-}
       UNKEY_KEYSPACE_ID: ${UNKEY_KEYSPACE_ID:-}
+      UNKEY_REQUESTS_PER_MINUTE: ${UNKEY_REQUESTS_PER_MINUTE:-}
     networks:
       - browser
       - gateway
@@ -101,6 +102,69 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+
+  unkey-preflight:
+    profiles: ["unkey"]
+    image: twitterclone-api:local
+    build: *api-build
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        require_value() {
+          if [ -z "$$2" ]; then
+            echo "$$1 is required by the unkey profile; see apps/api/UNKEY.md" >&2
+            exit 1
+          fi
+        }
+        require_value UNKEY_MANAGEMENT_ROOT_KEY "$${UNKEY_MANAGEMENT_ROOT_KEY:-}"
+        require_value UNKEY_API_ID "$${UNKEY_API_ID:-}"
+        require_value UNKEY_KEYSPACE_ID "$${UNKEY_KEYSPACE_ID:-}"
+        require_value UNKEY_VERIFY_ROOT_KEY "$${UNKEY_VERIFY_ROOT_KEY:-}"
+        case "$${UNKEY_API_ID}" in api_?*) ;; *) echo "UNKEY_API_ID must be an api_ ID" >&2; exit 1 ;; esac
+        case "$${UNKEY_KEYSPACE_ID}" in ks_?*) ;; *) echo "UNKEY_KEYSPACE_ID must be a ks_ ID, not an API ID" >&2; exit 1 ;; esac
+        case "$${UNKEY_API_ID}$${UNKEY_KEYSPACE_ID}" in
+          *[!A-Za-z0-9_]*) echo "Unkey IDs must contain only letters, digits, and underscores" >&2; exit 1 ;;
+        esac
+        case "$${UNKEY_MANAGEMENT_ROOT_KEY}$${UNKEY_VERIFY_ROOT_KEY}" in
+          *[!A-Za-z0-9_-]*) echo "Unkey credentials must contain only safe token characters" >&2; exit 1 ;;
+        esac
+        if [ "$${UNKEY_MANAGEMENT_ROOT_KEY}" = "$${UNKEY_VERIFY_ROOT_KEY}" ]; then
+          echo "Management and verify-only root credentials must be distinct" >&2
+          exit 1
+        fi
+    environment:
+      UNKEY_MANAGEMENT_ROOT_KEY: ${UNKEY_MANAGEMENT_ROOT_KEY:-}
+      UNKEY_API_ID: ${UNKEY_API_ID:-}
+      UNKEY_KEYSPACE_ID: ${UNKEY_KEYSPACE_ID:-}
+      UNKEY_VERIFY_ROOT_KEY: ${UNKEY_VERIFY_ROOT_KEY:-}
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+
+  frontline:
+    profiles: ["unkey"]
+    image: ghcr.io/unkeyed/frontline:v1.0.26-rc.1@sha256:86f286665f6756d3f34b42bc44a44c4c83772f9e14ef7ba5c879deb6403d03bf
+    command: ["--config", "/etc/unkey/gateway.toml"]
+    environment:
+      UNKEY_VERIFY_ROOT_KEY: ${UNKEY_VERIFY_ROOT_KEY:-}
+      UNKEY_KEYSPACE_ID: ${UNKEY_KEYSPACE_ID:-}
+    volumes:
+      - ./infra/unkey/gateway.toml:/etc/unkey/gateway.toml:ro
+    ports:
+      - "127.0.0.1:${UNKEY_GATEWAY_PORT:-8088}:8088"
+    networks:
+      - gateway
+    depends_on:
+      unkey-preflight:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
   db:
     image: postgres:18

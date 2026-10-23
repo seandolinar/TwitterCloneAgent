@@ -46,19 +46,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .map_err(|_| "Social service configuration is invalid")?;
     let maintenance = tokio::spawn(maintenance::run(pool.clone()));
     let delivery = tokio::spawn(EmailDelivery::new(pool.clone(), &config)?.run());
+    let cleanup = tokio::spawn(auth.keys.clone().run());
     let servers = tokio::try_join!(
         axum::serve(
             browser,
-            http::browser_router(pool.clone(), &auth, social)
+            http::browser_router(pool.clone(), &auth, social.clone())
                 .into_make_service_with_connect_info::<SocketAddr>()
         )
         .with_graceful_shutdown(shutdown()),
-        axum::serve(gateway, http::gateway_router()).with_graceful_shutdown(shutdown()),
+        axum::serve(
+            gateway,
+            http::gateway_router(
+                pool.clone(),
+                social,
+                config.unkey.as_ref().map(|unkey| unkey.keyspace_id.clone())
+            )
+        )
+        .with_graceful_shutdown(shutdown()),
     );
     maintenance.abort();
     delivery.abort();
+    cleanup.abort();
     let _ = maintenance.await;
     let _ = delivery.await;
+    let _ = cleanup.await;
     pool.close().await;
     servers?;
     Ok(())

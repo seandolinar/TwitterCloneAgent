@@ -9,6 +9,8 @@ const HANDLE = '[A-Za-z0-9_]{3,30}'
 const routes: ReadonlyArray<{ path: RegExp; methods: string[]; query?: string[] }> = [
   { path: /^\/api\/auth\/(csrf|session)$/, methods: ['GET'] },
   { path: /^\/api\/auth\/(register|login|logout|verify-email|resend-verification|forgot-password|reset-password|reauthenticate)$/, methods: ['POST'] },
+  { path: /^\/api\/auth\/keys$/, methods: ['GET', 'POST'] },
+  { path: /^\/api\/auth\/keys\/key_[A-Za-z0-9_]+$/, methods: ['DELETE'] },
   { path: /^\/api\/v1\/me$/, methods: ['GET', 'PATCH'] },
   { path: new RegExp(`^/api/v1/profiles/${HANDLE}$`), methods: ['GET'] },
   { path: new RegExp(`^/api/v1/profiles/${HANDLE}/posts$`), methods: ['GET'], query: ['limit', 'cursor'] },
@@ -24,6 +26,9 @@ export function privateHeaders(): Headers {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
+    'X-Frame-Options': 'DENY',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   })
 }
 

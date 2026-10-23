@@ -98,10 +98,13 @@ async fn readiness(State(pool): State<PgPool>) -> Result<StatusCode, ApiError> {
     }
 }
 
-pub fn gateway_router() -> Router {
-    // No protected route exists until its authorization adapter is implemented.
+pub fn gateway_router(
+    pool: PgPool,
+    social: crate::social::Social,
+    keyspace: Option<String>,
+) -> Router {
     bounded(
-        Router::new()
+        crate::gateway::routes(pool, social, keyspace)
             .fallback(not_found)
             .method_not_allowed_fallback(method_not_allowed),
         HttpLimits::default(),
@@ -298,7 +301,19 @@ mod tests {
 
     #[tokio::test]
     async fn gateway_does_not_expose_browser_health_route() {
-        let response = gateway_router().oneshot(request("/healthz")).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://127.0.0.1:1/unavailable")
+            .unwrap();
+        let social = crate::social::Social::new(
+            pool.clone(),
+            "test-fixture-rate-limit-not-a-real-secret",
+            30,
+        )
+        .unwrap();
+        let response = gateway_router(pool, social, None)
+            .oneshot(request("/healthz"))
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 

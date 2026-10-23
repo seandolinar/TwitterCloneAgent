@@ -842,3 +842,37 @@ async fn real_process_logs_do_not_include_account_request_secrets() {
     assert!(!logs.contains(&std::env::var("RATE_LIMIT_SECRET").unwrap()));
     pool.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL; run through tests/with_postgres.py"]
+async fn key_management_without_provider_setup_lists_metadata_but_never_issues_fake_secrets() {
+    let (pool, auth, app) = setup().await;
+    register(&auth).await;
+    let mut browser = Browser::default();
+    browser.login(&app, "fixture@example.test").await;
+    let mut request = browser.request("/browser/auth/keys", Value::Null);
+    *request.method_mut() = axum::http::Method::GET;
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    sqlx::query("UPDATE users SET verified_at=now()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut request = browser.request("/browser/auth/keys", Value::Null);
+    *request.method_mut() = axum::http::Method::GET;
+    let (status, list) = browser
+        .absorb(app.clone().oneshot(request).await.unwrap())
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["integrationAvailable"], false);
+    assert_eq!(list["items"], json!([]));
+    let (status, error) = browser
+        .post(&app, "/browser/auth/keys", json!({"name":"No provider"}))
+        .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(error["error"]["code"], "integration_unavailable");
+    assert!(error.get("key").is_none());
+    pool.close().await;
+}

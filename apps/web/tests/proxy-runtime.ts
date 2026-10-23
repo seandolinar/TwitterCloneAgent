@@ -10,6 +10,17 @@ test('built Nitro ingress rejects raw path bypasses and overwrites public identi
   const backend = createServer((request, response) => {
     received.push({ path: request.url!, headers: request.headers })
     response.setHeader('Content-Type', 'application/json')
+    if (request.url === '/browser/auth/session') {
+      const handle = request.headers.cookie?.includes('session=alice-cookie-fixture')
+        ? 'AliceFixture' : request.headers.cookie?.includes('session=bob-cookie-fixture') ? 'BobFixture' : undefined
+      if (!handle) {
+        response.writeHead(401).end('{"error":{"code":"authentication_required"}}')
+      } else {
+        response.end(JSON.stringify({ id: handle === 'AliceFixture' ? 'alice-id' : 'bob-id',
+          handle, verified: true, recentPasswordAuth: true }))
+      }
+      return
+    }
     response.setHeader('Set-Cookie', ['session=fixture; HttpOnly; Path=/', 'csrf=fixture; HttpOnly; Path=/'])
     response.end('{"csrfToken":"fixture"}')
   }).listen(0, '127.0.0.1')
@@ -88,4 +99,20 @@ test('built Nitro ingress rejects raw path bypasses and overwrites public identi
   const large = await raw('/api/auth/login', 'POST', { 'Content-Type': 'application/json' }, 'x'.repeat(16385))
   assert.equal(large.status, 413)
   assert.equal(received.length, 1)
+  // Exercise actual Start SSR, not just the proxy closure. Both requests use
+  // the same query key and renderer process but must hydrate different data.
+  const [alice, bob] = await Promise.all([
+    fetch(web, { headers: { Cookie: 'session=alice-cookie-fixture' } }),
+    fetch(web, { headers: { Cookie: 'session=bob-cookie-fixture' } }),
+  ])
+  assert.equal(alice.status, 200)
+  assert.equal(bob.status, 200)
+  assert(alice.headers.get('cache-control')?.includes('no-store'))
+  const [aliceHtml, bobHtml] = await Promise.all([alice.text(), bob.text()])
+  assert(aliceHtml.includes('Signed in as @AliceFixture'))
+  assert(!aliceHtml.includes('BobFixture'))
+  assert(bobHtml.includes('Signed in as @BobFixture'))
+  assert(!bobHtml.includes('AliceFixture'))
+  assert(!aliceHtml.includes('alice-cookie-fixture'))
+  assert(!bobHtml.includes('bob-cookie-fixture'))
 })

@@ -27,6 +27,10 @@ pub struct Actor {
 }
 
 impl Actor {
+    pub(crate) fn from_gateway(id: Uuid) -> Self {
+        Self { id }
+    }
+
     pub fn from_session(session: &ActiveSession) -> Self {
         Self {
             id: session.identity.id,

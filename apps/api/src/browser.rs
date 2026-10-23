@@ -6,6 +6,7 @@ use crate::{
     },
     config::Config,
     http::ApiError,
+    keys::Keys,
     rate_limit::{RateLimitError, RateLimiter, Rule},
     social::Actor,
     social_http::SocialContext,
@@ -33,6 +34,7 @@ const CSRF_SECONDS: i64 = 60 * 60;
 
 pub struct BrowserAuth {
     pub accounts: Accounts,
+    pub keys: Keys,
     config: Arc<Config>,
     limiter: RateLimiter,
 }
@@ -70,6 +72,7 @@ impl BrowserAuth {
     pub async fn new(pool: sqlx::PgPool, config: Arc<Config>) -> Result<Self, AccountError> {
         Ok(Self {
             accounts: Accounts::new(pool.clone()).await?,
+            keys: Keys::new(pool.clone(), &config).map_err(|_| AccountError::Unavailable)?,
             limiter: RateLimiter::new(pool, &config.rate_limit_secret)
                 .map_err(|_| AccountError::Unavailable)?,
             config,
@@ -94,6 +97,8 @@ impl BrowserAuth {
                 .route("/browser/auth/forgot-password", post(forgot_password))
                 .route("/browser/auth/reset-password", post(reset_password))
                 .route("/browser/auth/reauthenticate", post(reauthenticate))
+                .route("/browser/auth/keys", get(list_keys).post(create_key))
+                .route("/browser/auth/keys/{id}", axum::routing::delete(revoke_key))
                 .with_state(self.clone()),
         )
     }
@@ -593,6 +598,56 @@ async fn reset_password(
             }
             Err(error) => error.into_response(),
         },
+        Err(error) => error.into_response(),
+    }
+}
+
+async fn list_keys(
+    State(auth): State<Arc<BrowserAuth>>,
+    Extension(ctx): Extension<Arc<BrowserContext>>,
+) -> Response {
+    let session = match ctx.authenticated() {
+        Ok(value) => value,
+        Err(error) => return error.into_response(),
+    };
+    match auth.keys.list(session).await {
+        Ok(list) => Json(list).into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+async fn create_key(
+    State(auth): State<Arc<BrowserAuth>>,
+    Extension(ctx): Extension<Arc<BrowserContext>>,
+    Json(input): Json<crate::unkey::KeyCreate>,
+) -> Response {
+    let session = match ctx.authenticated() {
+        Ok(value) => value,
+        Err(error) => return error.into_response(),
+    };
+    match auth.keys.create(session, input).await {
+        Ok(issued) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "key": issued.grant.expose_secret(), "metadata": issued.metadata,
+            })),
+        )
+            .into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+async fn revoke_key(
+    State(auth): State<Arc<BrowserAuth>>,
+    Extension(ctx): Extension<Arc<BrowserContext>>,
+    axum::extract::Path(key_id): axum::extract::Path<String>,
+) -> Response {
+    let session = match ctx.authenticated() {
+        Ok(value) => value,
+        Err(error) => return error.into_response(),
+    };
+    match auth.keys.revoke(session, &key_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => error.into_response(),
     }
 }

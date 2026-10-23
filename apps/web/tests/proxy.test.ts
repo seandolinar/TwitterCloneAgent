@@ -48,7 +48,7 @@ test('proxy allowlist strips identity headers, preserves actual Origin, and rela
   for (const name of ['authorization', 'x-unkey-principal', 'x-forwarded-for', 'forwarded']) {
     assert.equal(received[0].headers[name], undefined)
   }
-  for (const path of ['/v1/me', '/api/http://evil.test', '/api/auth/keys', '/api/v1/feed?url=http://evil.test']) {
+  for (const path of ['/v1/me', '/api/http://evil.test', '/api/auth/credentials', '/api/v1/feed?url=http://evil.test']) {
     assert.notEqual((await proxyBrowserRequest(new Request(`http://web${path}`), '192.0.2.1', backend)).status, 200)
   }
   assert.equal((await proxyBrowserRequest(new Request('http://web/api/auth/login'), '192.0.2.1', backend)).status, 405)

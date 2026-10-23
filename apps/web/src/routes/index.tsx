@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')({ component: Home })
 
@@ -13,9 +13,10 @@ function Home() {
       <section className="notice" aria-labelledby="status-heading">
         <h2 id="status-heading">The foundation is in place.</h2>
         <p>
-          Accounts, posts, and integration keys are being built.
-          This is the application scaffold, not a working social network yet.
+          Account onboarding and the social API are available. Feed screens and
+          integration-key management are still being built.
         </p>
+        <p><Link to="/register">Create an account</Link> · <Link to="/login">Log in</Link></p>
       </section>
     </main>
   )

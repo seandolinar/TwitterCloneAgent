@@ -1,0 +1,14 @@
+# Pinned Frontline local-dev contract; not a Compute production deployment.
+# This dedicated entry exposes only the private integration listener.
+[local-dev]
+http_port = 8088
+root_key = "${UNKEY_VERIFY_ROOT_KEY}"
+
+[[local-dev.routes]]
+hostname = "localhost"
+upstream = "api:8081"
+
+[[local-dev.routes.policies]]
+id = "authenticate"
+enabled = true
+keyauth = { key_space_ids = ["${UNKEY_KEYSPACE_ID}"] }
